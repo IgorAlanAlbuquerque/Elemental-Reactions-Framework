@@ -1,105 +1,50 @@
-# SKSE "Hello, world!"
+# Skyrim Magic System Overhaul: Destruction
 
-Very simple C++ SKSE plugin for Skyrim!
+**Skyrim Magic System Overhaul: Destruction** is a comprehensive mod for *The Elder Scrolls V: Skyrim Special Edition* that redefines the Destruction school with a dynamic elemental system. Built using SKSE and C++ for top-tier performance, this mod introduces gauge-based mechanics, elemental states, powerful reactions, and 39 reworked spells to make fire, frost, and shock magic strategic and immersive. From incinerating foes with explosive combos to freezing enemies solid or chaining lightning through crowds, SMSO Des transforms magical combat into a spectacle of elemental mastery.
 
----
+## Features
 
-- [SKSE "Hello, world!"](#skse-hello-world)
-- [What does it do?](#what-does-it-do)
-- [CommonLibSSE NG](#commonlibsse-ng)
-- [Requirements](#requirements)
-  - [Opening the project](#opening-the-project)
-- [Project setup](#project-setup)
-  - [Finding Your "`mods`" Folder](#finding-your-mods-folder)
-- [Setup your own repository](#setup-your-own-repository)
-- [Sharing is Caring](#sharing-is-caring)
+### 1. Elemental Gauges
+Every Destruction spell (fire, frost, shock) builds a corresponding gauge (*FireGauge*, *FrostGauge*, *ShockGauge*) on enemies when hit. Gauges track elemental exposure, enabling powerful effects and reactions when filled to 100 units.
 
-# What does it do?
+### 2. Elemental States
+Environmental and equipment-based states alter how enemies interact with magic:
+- **Wet**: Triggered by rain or water effects. Reduces fire damage and *FireGauge* buildup, but boosts shock damage and *frostGauge*.
+- **Rubber**: From crafted rubber armor. Reduces shock damage and *ShockGauge* buildup, but ncreases the buildup rate of FireGauge and FrostGauge.
+- **Fur/Fat**: From crafted fur armor or enemies like trolls. Enhances frost resistance and *FrostGauge* buildup, but increases fire damage taken and speeds up ShockGauge buildup
 
-After running Skyrim, once at the Main Menu, press the `~` key to open the game console.
+### 3. Maximum Gauge Effects
+When a gauge reaches 100 units, a unique effect triggers:
+- **Incineration (Fire)**: A damage-over-time (DoT) effect burns the target.
+- **Deep Freeze (Frost)**: Freezes the target for 3 seconds, immobilizing them with a lingering slow effect.
+- **Overcharge (Shock)**: Cause small continuous electric shocks that stagger the enemy for 0.3 seconds every 1.3 seconds. Enemies with the 'electrified' effect shock nearby enemies also affected by electricity.
 
-You will see that we printed `"Hello, world!"` to the console at the Main Menu 🐉
+### 4. Elemental Reactions
+Combining elements triggers powerful reactions by consuming one gauge to amplify another:
 
-# CommonLibSSE NG
+### 5. Removal of Vanilla Drains
+Vanilla magicka and stamina drains from shock and frost spells are removed, replaced by the gauge system for a cohesive experience.
 
-Because this uses [CommonLibSSE NG](https://github.com/CharmedBaryon/CommonLibSSE-NG), it supports Skyrim SE, AE, GOG, and VR.
+### 6. Reworked Spells (39 New Spells)
+The Destruction school is revamped with 39 spells (11 fire, 11 frost, 11 shock), from Novice to Master:
 
-[CommonLibSSE NG](https://github.com/CharmedBaryon/CommonLibSSE-NG) is a fork of the popular [powerof3 fork](https://github.com/powerof3/CommonLibSSE) of the _original_ `CommonLibSSE` library created by [Ryan McKenzie](https://github.com/Ryan-rsm-McKenzie) in [2018](https://github.com/Ryan-rsm-McKenzie/CommonLibSSE/commit/224773c424bdb8e36c761810cdff0fcfefda5f4a).
+### 7. Reworked Perks
+The Destruction perk tree is overhauled:
 
-# Requirements
+### 8. Power-Ups for Low-Level Spells
+Novice to Adept spells scale with Destruction skill.
 
-- [Visual Studio 2022](https://visualstudio.microsoft.com/) (_the free Community edition_)
-- [`vcpkg`](https://github.com/microsoft/vcpkg)
-  - 1. Clone the repository using git OR [download it as a .zip](https://github.com/microsoft/vcpkg/archive/refs/heads/master.zip)
-  - 2. Go into the `vcpkg` folder and double-click on `bootstrap-vcpkg.bat`
-  - 3. Edit your system or user Environment Variables and add a new one:
-    - Name: `VCPKG_ROOT`  
-      Value: `C:\path\to\wherever\your\vcpkg\folder\is`
+### 9. Cooldowns for Balance
+Spells have cooldowns.
 
-<img src="https://raw.githubusercontent.com/SkyrimDev/Images/main/images/screenshots/Setting%20Environment%20Variables/VCPKG_ROOT.png" height="150">
+### 10. Long-Cast Animations and NPC Collaboration
+Higher-ranked spells have longer animations. Spells will continuously drain mana during the animation until their cost is met. It is possible for one (or more) NPC with the same spell to cast simultaneously, jointly consuming mana until the total required for activating the spell is reached. If this is done, only one spell will be cast, but the casting time can be drastically reduced. The initial mana points are consumed more rapidly, but subsequent points are consumed more slowly.
 
-## Opening the project
+## Contributing
 
-Once you have Visual Studio 2022 installed, you can open this folder in basically any C++ editor, e.g. [VS Code](https://code.visualstudio.com/) or [CLion](https://www.jetbrains.com/clion/) or [Visual Studio](https://visualstudio.microsoft.com/)
-- > _for VS Code, if you are not automatically prompted to install the [C++](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools) and [CMake Tools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cmake-tools) extensions, please install those and then close VS Code and then open this project as a folder in VS Code_
-
-You may need to click `OK` on a few windows, but the project should automatically run CMake!
-
-It will _automatically_ download [CommonLibSSE NG](https://github.com/CharmedBaryon/CommonLibSSE-NG) and everything you need to get started making your new plugin!
-
-# Project setup
-
-By default, when this project compiles it will output a `.dll` for your SKSE plugin into the `build/` folder.
-
-If you want to configure this project to output your plugin files
-into your Skyrim Special Edition's "`Data`" folder:
-
-- Set the `SKYRIM_FOLDER` environment variable to the path of your Skyrim installation  
-  e.g. `C:\Program Files (x86)\Steam\steamapps\common\Skyrim Special Edition`
-
-<img src="https://raw.githubusercontent.com/SkyrimDev/Images/main/images/screenshots/Setting%20Environment%20Variables/SKYRIM_FOLDER.png" height="150">
-
-If you want to configure this project to output your plugin files
-into your "`mods`" folder:  
-(_for Mod Organizer 2 or Vortex_)
-
-- Set the `SKYRIM_MODS_FOLDER` environment variable to the path of your mods folder:  
-  e.g. `C:\Users\<user>\AppData\Local\ModOrganizer\Skyrim Special Edition\mods`  
-  e.g. `C:\Users\<user>\AppData\Roaming\Vortex\skyrimse\mods`
-
-<img src="https://raw.githubusercontent.com/SkyrimDev/Images/main/images/screenshots/Setting%20Environment%20Variables/SKYRIM_MODS_FOLDER.png" height="150">
-
-## Finding Your "`mods`" Folder
-
-In Mod Organizer 2:
-
-> Click the `...` next to "Mods" to get the full folder path
-
-<img src="https://raw.githubusercontent.com/SkyrimDev/Images/main/images/screenshots/MO2/MO2SettingsModsFolder.png" height="150">
-
-In Vortex:
-
-<img src="https://raw.githubusercontent.com/SkyrimDev/Images/main/images/screenshots/Vortex/VortexSettingsModsFolder.png" height="150">
-
-# Setup your own repository
-
-If you clone this template on GitHub, please:
-
-- Go into `LICENSE` and change the year and change `<YOUR NAME HERE>` to your name.
-- Go into `CODE_OF_CONDUCT.md` and change `<YOUR CONTACT INFO HERE>` to your contact information.
-
-The `LICENSE` defaults to using the [MIT License](https://choosealicense.com/licenses/mit/), a permissive license which is used by many popular Skyrim mods (_including [CommonLibSSE](https://github.com/Ryan-rsm-McKenzie/CommonLibSSE)_).
-
-The `CODE_OF_CONDUCT.md` defaults to using the [Contributor Covenant](https://www.contributor-covenant.org/), the most popular code of conduct for open source communities.
-
-If you'd like to know more about open source licenses, see:
-- [Licensing a repository](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository)
-- [Choose an open source license](https://choosealicense.com/)
-
-# Sharing is Caring
-
-**If you use this template, PLEASE release your project as a public open source project.** 💖
-
-**Please do not release your SKSE plugin on Nexus/etc without making the source code available** \*
-
-> \* _You do you. But please help our community by sharing your source `<3`_
+Want to contribute to *SMSOD*? We welcome bug fixes, feature suggestions, and code contributions!
+1. Fork the repository on [GitHub](https://github.com/yourusername/smsod).
+2. Create a branch for your changes (`git checkout -b feature/your-feature`).
+3. Commit your changes with clear messages (`git commit -m "Add feature X"`).
+4. Push to your fork (`git push origin feature/your-feature`).
+5. Open a Pull Request on GitHub.
