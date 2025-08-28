@@ -4,39 +4,47 @@ namespace Hooks {
     class ActiveEffectHook {
     public:
         static void Install() {
-            REL::Relocation<std::uintptr_t> vtable{RE::VTABLE_ActiveEffect[0]};
-            original_Update = vtable.write_vfunc(0x8, &Thunk);
-            SKSE::log::info("Hooked ActiveEffect::Update");
+            REL::Relocation<std::uintptr_t> target{RE::VTABLE_ActiveEffect[0]};
+            auto funcAddr = target.write_vfunc(0x8, 0);
+
+            SKSE::Trampoline& trampoline = SKSE::GetTrampoline();
+            original_Update = trampoline.write_call<5>(funcAddr, Thunk);
+
+            SKSE::log::info("Hooked ActiveEffect::Update via trampoline");
         }
 
     private:
         static void Thunk(RE::ActiveEffect* ae, float delta) {
-            auto effect = ae ? (ae->effect ? ae->effect->baseEffect : nullptr) : nullptr;
-            auto target = ae ? ae->GetTargetActor() : nullptr;
+            const RE::EffectSetting* effect = nullptr;
+            if (ae && ae->effect) {
+                effect = ae->effect->baseEffect;
+            }
 
-            if (effect && target) {
+            if (!effect) {
+                original_Update(ae, delta);
+                return;
+            }
+            if (const RE::Actor* target = ae ? ae->GetTargetActor() : nullptr) {
                 static const auto shockKW = RE::TESForm::LookupByEditorID<RE::BGSKeyword>("MagicDamageShock");
                 static const auto frostKW = RE::TESForm::LookupByEditorID<RE::BGSKeyword>("MagicDamageFrost");
 
                 bool isShock = shockKW && effect->HasKeyword(shockKW);
                 bool isFrost = frostKW && effect->HasKeyword(frostKW);
 
-                if (isShock || isFrost) {
-                    if (effect->data.archetype == RE::EffectArchetypes::ArchetypeID::kValueModifier) {
-                        if (effect->IsDetrimental()) {
-                            auto avEnum = effect->data.primaryAV;
-                            if (avEnum == RE::ActorValue::kMagicka || avEnum == RE::ActorValue::kStamina) {
-                                float originalMagnitude = ae->magnitude;
-                                ae->magnitude = 0.0f;
+                if ((isShock || isFrost) &&
+                    effect->data.archetype == RE::EffectArchetypes::ArchetypeID::kValueModifier &&
+                    effect->IsDetrimental()) {
+                    auto avEnum = effect->data.primaryAV;
+                    if (avEnum == RE::ActorValue::kMagicka || avEnum == RE::ActorValue::kStamina) {
+                        float originalMagnitude = ae->magnitude;
+                        ae->magnitude = 0.0f;
 
-                                SKSE::log::info("Blocked {} drain effect on {}", effect->GetName(), target->GetName());
+                        SKSE::log::info("Blocked {} drain effect on {}", effect->GetName(), target->GetName());
 
-                                original_Update(ae, delta);
+                        original_Update(ae, delta);
 
-                                ae->magnitude = originalMagnitude;
-                                return;
-                            }
-                        }
+                        ae->magnitude = originalMagnitude;
+                        return;
                     }
                 }
             }
