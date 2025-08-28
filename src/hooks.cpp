@@ -9,8 +9,6 @@ namespace Hooks {
 
             SKSE::Trampoline& trampoline = SKSE::GetTrampoline();
             original_Update = trampoline.write_call<5>(funcAddr, Thunk);
-
-            SKSE::log::info("Hooked ActiveEffect::Update via trampoline");
         }
 
     private:
@@ -38,11 +36,7 @@ namespace Hooks {
                     if (avEnum == RE::ActorValue::kMagicka || avEnum == RE::ActorValue::kStamina) {
                         float originalMagnitude = ae->magnitude;
                         ae->magnitude = 0.0f;
-
-                        SKSE::log::info("Blocked {} drain effect on {}", effect->GetName(), target->GetName());
-
                         original_Update(ae, delta);
-
                         ae->magnitude = originalMagnitude;
                         return;
                     }
