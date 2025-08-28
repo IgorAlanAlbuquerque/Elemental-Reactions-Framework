@@ -10,9 +10,10 @@ if(DEFINED ENV{SKYRIM_MODS_FOLDER} AND IS_DIRECTORY "$ENV{SKYRIM_MODS_FOLDER}")
 endif()
 
 find_package(CommonLibSSE CONFIG REQUIRED)
-add_commonlibsse_plugin(${PROJECT_NAME} SOURCES plugin.cpp)
+add_commonlibsse_plugin(${PROJECT_NAME} SOURCES src/Plugin.cpp src/Hooks.cpp)
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
-target_precompile_headers(${PROJECT_NAME} PRIVATE PCH.h)
+target_include_directories(${PROJECT_NAME} PRIVATE src)
+target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h src/Hooks.h)
 
 if(DEFINED OUTPUT_FOLDER)
     set(DLL_FOLDER "${OUTPUT_FOLDER}/SKSE/Plugins")
