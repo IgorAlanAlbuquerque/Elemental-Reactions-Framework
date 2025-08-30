@@ -1,4 +1,4 @@
-#include "logger.h"
+#include "Logger.h"
 
 namespace Logger {
     void InitializeLogging() {
