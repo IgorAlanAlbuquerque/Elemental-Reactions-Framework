@@ -1,3 +1,4 @@
+#include "ElementalStates.h"
 #include "PCH.h"
 #include "RemoveDrains.h"
 
@@ -30,6 +31,8 @@ namespace {
         if (msg->type == SKSE::MessagingInterface::kDataLoaded) {
             spdlog::info("kDataLoaded recebido. Iniciando remoção de efeitos.");
             RemoveDrains::RemoveDrainFromShockAndFrost();
+            spdlog::info("Adicionados as flas de estados elementais.");
+            ElementalStates::RegisterSerialization();
         }
     }
 }

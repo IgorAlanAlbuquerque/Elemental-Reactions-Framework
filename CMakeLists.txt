@@ -16,6 +16,7 @@ add_commonlibsse_plugin(${PROJECT_NAME}
     src/PCH.cpp
     src/Plugin.cpp
     src/RemoveDrains.cpp
+    src/ElementalStates.cpp
 )
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
