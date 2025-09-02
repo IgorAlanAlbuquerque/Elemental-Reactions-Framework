@@ -1,17 +1,13 @@
 #pragma once
 
-// CommonLibSSE / SKSE
-#include "RE/Skyrim.h"
-#include "REL/Relocation.h"
-#include "SKSE/SKSE.h"
+#include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/spdlog.h>
 
-// Logging
-#include "spdlog/sinks/basic_file_sink.h"
-#include "spdlog/spdlog.h"
-
-// (Opcional) std utilidades
 #include <memory>
 #include <string>
 #include <string_view>
+
+#include "RE/Skyrim.h"
+#include "SKSE/SKSE.h"
 
 using namespace std::literals;
