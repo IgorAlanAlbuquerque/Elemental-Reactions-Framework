@@ -1,0 +1,22 @@
+{
+  "configurations": [
+    {
+      "name": "x64",
+      "includePath": [
+        "${workspaceFolder}/src",
+        "${workspaceFolder}/build/release/vcpkg_installed/x64-windows-static-md/include"
+      ],
+      "defines": ["UNICODE", "_DEBUG"],
+      "windowsSdkVersion": "10.0.19041.0",
+      "compilerPath": "cl.exe",
+      "cStandard": "c17",
+      "cppStandard": "c++23",
+      "intelliSenseMode": "windows-msvc-x64",
+      "configurationProvider": "ms-vscode.cmake-tools",
+      "compileCommands": [
+        "${workspaceFolder}/build/release/compile_commands.json"
+      ]
+    }
+  ],
+  "version": 4
+}
