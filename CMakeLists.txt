@@ -15,10 +15,11 @@ add_commonlibsse_plugin(${PROJECT_NAME}
   SOURCES
     src/PCH.cpp
     src/Plugin.cpp
+    src/RemoveDrains.cpp
 )
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
-target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h)
+target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h src/ElementalStates.h src/RemoveDrains.h)
 set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "SMSODestruction")
 
 if(DEFINED OUTPUT_FOLDER)
