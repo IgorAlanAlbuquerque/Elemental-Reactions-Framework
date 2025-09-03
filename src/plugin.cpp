@@ -25,14 +25,23 @@ namespace {
         }
     }
 
-    void OnSKSEMessage(SKSE::MessagingInterface::Message* msg) {
+    void GlobalMessageHandler(SKSE::MessagingInterface::Message* msg) {
         if (!msg) return;
 
-        if (msg->type == SKSE::MessagingInterface::kDataLoaded) {
-            spdlog::info("kDataLoaded recebido. Iniciando remoção de efeitos.");
-            RemoveDrains::RemoveDrainFromShockAndFrost();
-            spdlog::info("Adicionados as flas de estados elementais.");
-            ElementalStates::RegisterSerialization();
+        switch (msg->type) {
+            case SKSE::MessagingInterface::kDataLoaded:
+                spdlog::info("kDataLoaded: removendo drains.");
+                RemoveDrains::RemoveDrainFromShockAndFrost();
+                break;
+            case SKSE::MessagingInterface::kNewGame:
+                [[fallthrough]];
+            case SKSE::MessagingInterface::kPostLoadGame:
+                spdlog::info("[TEST] Game carregado — executando teste de flags no Player");
+                ElementalStatesTest::RunOnce();
+                break;
+            default:
+                spdlog::trace("SKSE message ignorada (type={})", static_cast<int>(msg->type));
+                break;
         }
     }
 }
@@ -41,9 +50,11 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* sks
     SKSE::Init(skse);
     InitializeLogger();
     spdlog::info("SMSODestruction carregado.");
+    spdlog::info("Adicionado a API de estados elementais.");
+    ElementalStates::RegisterSerialization();
 
     if (const auto mi = SKSE::GetMessagingInterface()) {
-        mi->RegisterListener(OnSKSEMessage);
+        mi->RegisterListener(GlobalMessageHandler);
         spdlog::info("Messaging listener registrado.");
     }
 
