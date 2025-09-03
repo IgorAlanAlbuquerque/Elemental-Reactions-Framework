@@ -1,13 +1,10 @@
 #include "ElementalStates.h"
 
-#if !defined(__cpp_lib_to_underlying) || (__cpp_lib_to_underlying < 202102L)
-template <class Enum>
-constexpr std::underlying_type_t<Enum> to_underlying(Enum e) noexcept {
-    return static_cast<std::underlying_type_t<Enum>>(e);
-}
-#else
-using std::to_underlying;
-#endif
+#include <cstddef>
+#include <unordered_map>
+
+#include "common/PluginSerialization.h"
+#include "common/StateCommon.h"
 
 namespace ElementalStates {
     namespace Flags {
@@ -23,9 +20,41 @@ namespace ElementalStates {
             return std::byte{1} << static_cast<int>(to_underlying(f));
         }
 
-        inline constexpr std::uint32_t kUniqueID = FOURCC('E', 'L', 'M', 'S');
         inline constexpr std::uint32_t kRecordID = FOURCC('F', 'L', 'G', 'S');
         inline constexpr std::uint32_t kVersion = 1;
+
+        bool Save(SKSE::SerializationInterface* ser) {
+            const auto& m = state();
+            const auto count = static_cast<std::uint32_t>(m.size());
+            ser->WriteRecordData(&count, sizeof(count));
+            for (const auto& [id, b] : m) {
+                std::uint8_t raw = std::to_integer<std::uint8_t>(b);
+                ser->WriteRecordData(&id, sizeof(id));
+                ser->WriteRecordData(&raw, sizeof(raw));
+            }
+            return true;
+        }
+
+        bool Load(SKSE::SerializationInterface* ser, std::uint32_t version, std::uint32_t) {
+            if (version != kVersion) return false;
+            std::uint32_t count{};
+            if (!ser->ReadRecordData(&count, sizeof(count))) return false;
+
+            auto& m = state();
+            m.clear();
+
+            for (std::uint32_t i = 0; i < count; ++i) {
+                RE::FormID oldID{};
+                std::uint8_t raw{};
+                if (!(ser->ReadRecordData(&oldID, sizeof(oldID)) && ser->ReadRecordData(&raw, sizeof(raw)))) break;
+                RE::FormID newID{};
+                if (!ser->ResolveFormID(oldID, newID)) continue;
+                m[newID] = std::byte{raw};
+            }
+            return true;
+        }
+
+        void Revert() { state().clear(); }
     }
 
     void Set(const RE::Actor* a, Flag f, bool value) {
@@ -37,74 +66,19 @@ namespace ElementalStates {
         else
             b &= ~m;
     }
-
     bool Get(const RE::Actor* a, Flag f) {
         if (!a) return false;
-        const auto& map = Flags::state();
-        const auto it = map.find(a->GetFormID());
-        if (it == map.end()) return false;
+        const auto it = Flags::state().find(a->GetFormID());
+        if (it == Flags::state().end()) return false;
         return (it->second & Flags::bit(f)) != std::byte{0};
     }
-
     void Clear(const RE::Actor* a) {
-        if (!a) return;
-        Flags::state().erase(a->GetFormID());
+        if (a) Flags::state().erase(a->GetFormID());
     }
-
     void ClearAll() { Flags::state().clear(); }
 
-    // ----- Callbacks SKSE -----
-    static void OnSave(SKSE::SerializationInterface* ser) {
-        if (!ser) return;
-        if (!ser->OpenRecord(Flags::kRecordID, Flags::kVersion)) return;
-
-        const auto& map = Flags::state();
-        const auto count = static_cast<std::uint32_t>(map.size());
-        ser->WriteRecordData(&count, sizeof(count));
-
-        for (const auto& [formID, bits] : map) {
-            std::uint8_t raw = std::to_integer<std::uint8_t>(bits);
-            ser->WriteRecordData(&formID, sizeof(formID));
-            ser->WriteRecordData(&raw, sizeof(raw));
-        }
-    }
-
-    static void OnLoad(SKSE::SerializationInterface* ser) {
-        if (!ser) return;
-
-        std::uint32_t type{};
-        std::uint32_t version{};
-        std::uint32_t length{};
-        while (ser->GetNextRecordInfo(type, version, length)) {
-            if (type != Flags::kRecordID || version != Flags::kVersion) continue;
-
-            std::uint32_t count = 0;
-            if (!ser->ReadRecordData(&count, sizeof(count))) continue;
-
-            auto& map = Flags::state();
-            map.clear();
-
-            for (std::uint32_t i = 0; i < count; ++i) {
-                RE::FormID oldID{};
-                std::uint8_t raw{};
-                if (!ser->ReadRecordData(&oldID, sizeof(oldID)) || !ser->ReadRecordData(&raw, sizeof(raw))) break;
-
-                RE::FormID newID{};
-                if (!ser->ResolveFormID(oldID, newID)) continue;
-
-                map[newID] = std::byte{raw};
-            }
-        }
-    }
-
-    static void OnRevert(SKSE::SerializationInterface*) { Flags::state().clear(); }
-
-    void RegisterSerialization() {
-        auto* ser = SKSE::GetSerializationInterface();
-        ser->SetUniqueID(Flags::kUniqueID);
-        ser->SetSaveCallback(OnSave);
-        ser->SetLoadCallback(OnLoad);
-        ser->SetRevertCallback(OnRevert);
+    void RegisterStore() {
+        Ser::Register({Flags::kRecordID, Flags::kVersion, &Flags::Save, &Flags::Load, &Flags::Revert});
     }
 }
 

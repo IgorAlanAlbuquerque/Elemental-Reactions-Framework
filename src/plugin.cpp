@@ -1,6 +1,8 @@
 #include "ElementalStates.h"
 #include "PCH.h"
 #include "RemoveDrains.h"
+#include "common/PluginSerialization.h"
+#include "common/StateCommon.h"
 
 #ifndef DLLEXPORT
     #include "REL/Relocation.h"
@@ -30,17 +32,16 @@ namespace {
 
         switch (msg->type) {
             case SKSE::MessagingInterface::kDataLoaded:
-                spdlog::info("kDataLoaded: removendo drains.");
+                spdlog::info("Removendo drains.");
                 RemoveDrains::RemoveDrainFromShockAndFrost();
                 break;
             case SKSE::MessagingInterface::kNewGame:
                 [[fallthrough]];
             case SKSE::MessagingInterface::kPostLoadGame:
-                spdlog::info("[TEST] Game carregado — executando teste de flags no Player");
+                spdlog::info("Executando teste de flags no Player");
                 ElementalStatesTest::RunOnce();
                 break;
             default:
-                spdlog::trace("SKSE message ignorada (type={})", static_cast<int>(msg->type));
                 break;
         }
     }
@@ -50,8 +51,12 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* sks
     SKSE::Init(skse);
     InitializeLogger();
     spdlog::info("SMSODestruction carregado.");
-    spdlog::info("Adicionado a API de estados elementais.");
-    ElementalStates::RegisterSerialization();
+
+    Ser::Install(FOURCC('S', 'M', 'S', 'O'));
+    spdlog::info("Serializador registrado.");
+
+    ElementalStates::RegisterStore();
+    spdlog::info("Store de estados elementais registrado.");
 
     if (const auto mi = SKSE::GetMessagingInterface()) {
         mi->RegisterListener(GlobalMessageHandler);
