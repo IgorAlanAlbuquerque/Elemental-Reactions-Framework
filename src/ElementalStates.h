@@ -13,7 +13,3 @@ namespace ElementalStates {
     void Clear(const RE::Actor* a);
     void ClearAll();
 }
-
-namespace ElementalStatesTest {
-    void RunOnce();
-}

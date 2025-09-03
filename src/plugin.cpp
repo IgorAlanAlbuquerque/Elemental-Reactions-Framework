@@ -30,19 +30,9 @@ namespace {
     void GlobalMessageHandler(SKSE::MessagingInterface::Message* msg) {
         if (!msg) return;
 
-        switch (msg->type) {
-            case SKSE::MessagingInterface::kDataLoaded:
-                spdlog::info("Removendo drains.");
-                RemoveDrains::RemoveDrainFromShockAndFrost();
-                break;
-            case SKSE::MessagingInterface::kNewGame:
-                [[fallthrough]];
-            case SKSE::MessagingInterface::kPostLoadGame:
-                spdlog::info("Executando teste de flags no Player");
-                ElementalStatesTest::RunOnce();
-                break;
-            default:
-                break;
+        if (msg->type == SKSE::MessagingInterface::kDataLoaded) {
+            spdlog::info("Removendo drains.");
+            RemoveDrains::RemoveDrainFromShockAndFrost();
         }
     }
 }
