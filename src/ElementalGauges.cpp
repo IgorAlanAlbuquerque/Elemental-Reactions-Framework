@@ -28,20 +28,21 @@ namespace ElementalGauges {
         // Aplica decay pendente para 1 elemento de um Entry
         inline void tickOne(Entry& e, std::size_t i, float nowH) {
             auto& val = e.v[i];
-            const float hit = e.lastHitH[i];
             auto& eval = e.lastEvalH[i];
+            const float hit = e.lastHitH[i];
 
             if (val == 0) {
                 eval = nowH;
                 return;
             }
 
-            // início do decaimento é o maior entre: (última avaliação) e (último hit + graça)
-            const float startH = std::max(eval, hit + kGraceHours);
-            if (nowH <= startH) return;
+            const float tRef = std::max(eval, hit);
+            const float untilDecay = tRef + ElementalGaugesDecay::GraceGameHours();
+            if (nowH <= untilDecay) return;
 
-            const float elapsedH = nowH - startH;
-            const float decF = elapsedH * kDecayPerHour;  // unidades
+            const float elapsedH = nowH - untilDecay;
+            const float decF = elapsedH * ElementalGaugesDecay::DecayPerGameHour();
+
             int next = static_cast<int>(val) - static_cast<int>(decF);
             if (next < 0) next = 0;
 
@@ -87,12 +88,20 @@ namespace ElementalGauges {
     void Add(const RE::Actor* a, Type t, int delta) {
         if (!a) return;
         auto& e = Gauges::state()[a->GetFormID()];
+        const auto i = Gauges::idx(t);
         const float nowH = NowHours();
-        Gauges::tickOne(e, Gauges::idx(t), nowH);  // aplica decay antes
-        const int next = static_cast<int>(e.v[Gauges::idx(t)]) + delta;
-        e.v[Gauges::idx(t)] = clamp100(next);
-        e.lastHitH[Gauges::idx(t)] = nowH;   // *este* é um hit — reinicia “graça”
-        e.lastEvalH[Gauges::idx(t)] = nowH;  // última avaliação agora
+
+        const auto preTick = e.v[i];  // valor antes do decay
+        Gauges::tickOne(e, i, nowH);
+        const auto before = e.v[i];  // valor após o decay
+        const auto decayed = static_cast<int>(preTick) - static_cast<int>(before);
+
+        const int next = static_cast<int>(before) + delta;
+        const auto after = clamp100(next);
+
+        e.v[i] = after;
+        e.lastHitH[i] = nowH;
+        e.lastEvalH[i] = nowH;
     }
 
     void Clear(const RE::Actor* a) {
@@ -148,64 +157,4 @@ namespace ElementalGauges {
     }
 
     void RegisterStore() { Ser::Register({Gauges::kRecordID, Gauges::kVersion, &Save, &Load, &Revert}); }
-}
-
-namespace {
-    using namespace std::chrono;
-
-    void LogOnceAt(std::chrono::steady_clock::time_point target) {
-        const auto now = steady_clock::now();
-        if (now < target) {
-            // re-agenda até bater o horário
-            SKSE::GetTaskInterface()->AddTask([target]() { LogOnceAt(target); });
-            return;
-        }
-
-        if (const auto* pc = RE::PlayerCharacter::GetSingleton()) {
-            using enum ElementalGauges::Type;
-            const auto fire = ElementalGauges::Get(pc, Fire);  // aplica decay pendente
-            const auto frost = ElementalGauges::Get(pc, Frost);
-            const auto shock = ElementalGauges::Get(pc, Shock);
-            spdlog::info("[GAUGES TEST] após delay: Fire={} Frost={} Shock={}", fire, frost, shock);
-        }
-    }
-
-    inline void LogAfterDelaySeconds(int seconds) {
-        const auto sec = std::max(0, seconds);
-        const auto when = std::chrono::steady_clock::now() + std::chrono::seconds(sec);
-        SKSE::GetTaskInterface()->AddTask([when]() { LogOnceAt(when); });
-        spdlog::info("[GAUGES TEST] agendado um Get() em {}s.", sec);
-    }
-}
-
-namespace ElementalGaugesTest {
-    using enum ElementalGauges::Type;
-
-    void RunOnce() {
-        const RE::PlayerCharacter* pc = RE::PlayerCharacter::GetSingleton();
-        if (!pc) {
-            spdlog::error("[GAUGES TEST] PlayerCharacter não encontrado");
-            return;
-        }
-
-        // --- snapshot inicial
-        spdlog::info("[GAUGES TEST] inicial: Fire={} Frost={} Shock={}", ElementalGauges::Get(pc, Fire),
-                     ElementalGauges::Get(pc, Frost), ElementalGauges::Get(pc, Shock));
-
-        // --- SET: define alguns valores base
-        ElementalGauges::Set(pc, Fire, 20);
-        ElementalGauges::Set(pc, Frost, 40);
-        ElementalGauges::Set(pc, Shock, 60);
-        spdlog::info("[GAUGES TEST] depois de Set: Fire={} Frost={} Shock={}", ElementalGauges::Get(pc, Fire),
-                     ElementalGauges::Get(pc, Frost), ElementalGauges::Get(pc, Shock));
-
-        // --- ADD: incrementos/declínios (testa clamp em 0..100)
-        ElementalGauges::Add(pc, Fire, +90);    // 20 + 90 -> 100 (satura)
-        ElementalGauges::Add(pc, Frost, -100);  // 40 - 100 -> 0   (satura)
-        ElementalGauges::Add(pc, Shock, +25);   // 60 + 25  -> 85
-        spdlog::info("[GAUGES TEST] depois de Add: Fire={} Frost={} Shock={}", ElementalGauges::Get(pc, Fire),
-                     ElementalGauges::Get(pc, Frost), ElementalGauges::Get(pc, Shock));
-
-        LogAfterDelaySeconds(30);
-    }
 }

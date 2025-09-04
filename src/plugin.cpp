@@ -43,8 +43,6 @@ namespace {
             case SKSE::MessagingInterface::kNewGame:
                 [[fallthrough]];
             case SKSE::MessagingInterface::kPostLoadGame:
-                spdlog::info("Executando teste de flags no Player");
-                ElementalGaugesTest::RunOnce();
                 MagicGauges::ResetDebounce();
                 break;
             default:
