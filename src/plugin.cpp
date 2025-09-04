@@ -1,3 +1,4 @@
+#include "ElementalGauges.h"
 #include "ElementalStates.h"
 #include "PCH.h"
 #include "RemoveDrains.h"
@@ -30,9 +31,19 @@ namespace {
     void GlobalMessageHandler(SKSE::MessagingInterface::Message* msg) {
         if (!msg) return;
 
-        if (msg->type == SKSE::MessagingInterface::kDataLoaded) {
-            spdlog::info("Removendo drains.");
-            RemoveDrains::RemoveDrainFromShockAndFrost();
+        switch (msg->type) {
+            case SKSE::MessagingInterface::kDataLoaded:
+                spdlog::info("Removendo drains.");
+                RemoveDrains::RemoveDrainFromShockAndFrost();
+                break;
+            case SKSE::MessagingInterface::kNewGame:
+                [[fallthrough]];
+            case SKSE::MessagingInterface::kPostLoadGame:
+                spdlog::info("Executando teste de flags no Player");
+                ElementalGaugesTest::RunOnce();
+                break;
+            default:
+                break;
         }
     }
 }
@@ -47,6 +58,8 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* sks
 
     ElementalStates::RegisterStore();
     spdlog::info("Store de estados elementais registrado.");
+    ElementalGauges::RegisterStore();
+    spdlog::info("Store de medidores elementais registrado.");
 
     if (const auto mi = SKSE::GetMessagingInterface()) {
         mi->RegisterListener(GlobalMessageHandler);
