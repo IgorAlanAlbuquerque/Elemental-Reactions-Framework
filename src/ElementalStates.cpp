@@ -2,9 +2,10 @@
 
 #include <cstddef>
 #include <unordered_map>
+#include <utility>
 
+#include "common/Helpers.h"
 #include "common/PluginSerialization.h"
-#include "common/StateCommon.h"
 
 namespace ElementalStates {
     namespace Flags {
@@ -17,7 +18,7 @@ namespace ElementalStates {
         }
 
         [[nodiscard]] constexpr std::byte bit(Flag f) noexcept {
-            return std::byte{1} << static_cast<int>(to_underlying(f));
+            return std::byte{1} << static_cast<int>(std::to_underlying(f));
         }
 
         inline constexpr std::uint32_t kRecordID = FOURCC('F', 'L', 'G', 'S');

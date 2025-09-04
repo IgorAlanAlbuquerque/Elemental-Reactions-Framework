@@ -3,9 +3,10 @@
 #include <array>
 #include <chrono>
 #include <unordered_map>
+#include <utility>
 
+#include "common/Helpers.h"
 #include "common/PluginSerialization.h"
-#include "common/StateCommon.h"
 
 using namespace ElementalGaugesDecay;
 
@@ -54,7 +55,9 @@ namespace ElementalGauges {
             tickOne(e, 2, nowH);
         }
 
-        [[nodiscard]] constexpr std::size_t idx(Type t) noexcept { return static_cast<std::size_t>(to_underlying(t)); }
+        [[nodiscard]] constexpr std::size_t idx(Type t) noexcept {
+            return static_cast<std::size_t>(std::to_underlying(t));
+        }
 
         inline constexpr std::uint32_t kRecordID = FOURCC('G', 'A', 'U', 'V');
         inline constexpr std::uint32_t kVersion = 1;

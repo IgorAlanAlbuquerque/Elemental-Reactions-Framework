@@ -1,9 +1,10 @@
 #include "ElementalGauges.h"
 #include "ElementalStates.h"
+#include "MagicGaugesListener.h"
 #include "PCH.h"
 #include "RemoveDrains.h"
+#include "common/Helpers.h"
 #include "common/PluginSerialization.h"
-#include "common/StateCommon.h"
 
 #ifndef DLLEXPORT
     #include "REL/Relocation.h"
@@ -35,12 +36,16 @@ namespace {
             case SKSE::MessagingInterface::kDataLoaded:
                 spdlog::info("Removendo drains.");
                 RemoveDrains::RemoveDrainFromShockAndFrost();
+                MagicGauges::Install();
+                MagicGauges::ResetDebounce();
+                spdlog::info("listener de magias instalado.");
                 break;
             case SKSE::MessagingInterface::kNewGame:
                 [[fallthrough]];
             case SKSE::MessagingInterface::kPostLoadGame:
                 spdlog::info("Executando teste de flags no Player");
                 ElementalGaugesTest::RunOnce();
+                MagicGauges::ResetDebounce();
                 break;
             default:
                 break;
