@@ -17,6 +17,18 @@ namespace ElementalGauges {
     void ClearAll();
 }
 
+namespace ElementalGaugesDecay {
+    // 5 segundos de “graça” antes de começar a decair (em horas de jogo)
+    constexpr float kGraceSec = 3.0f;
+    constexpr float kGraceHours = kGraceSec / 3600.0f;
+
+    // taxa de decaimento (unidades por segundo de jogo)
+    constexpr float kDecayPerSec = 15.0f;
+    constexpr float kDecayPerHour = kDecayPerSec * 3600.0f;
+
+    inline float NowHours() { return RE::Calendar::GetSingleton()->GetHoursPassed(); }
+}
+
 namespace ElementalGaugesTest {
     void RunOnce();
 }

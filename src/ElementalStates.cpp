@@ -22,39 +22,6 @@ namespace ElementalStates {
 
         inline constexpr std::uint32_t kRecordID = FOURCC('F', 'L', 'G', 'S');
         inline constexpr std::uint32_t kVersion = 1;
-
-        bool Save(SKSE::SerializationInterface* ser) {
-            const auto& m = state();
-            const auto count = static_cast<std::uint32_t>(m.size());
-            ser->WriteRecordData(&count, sizeof(count));
-            for (const auto& [id, b] : m) {
-                std::uint8_t raw = std::to_integer<std::uint8_t>(b);
-                ser->WriteRecordData(&id, sizeof(id));
-                ser->WriteRecordData(&raw, sizeof(raw));
-            }
-            return true;
-        }
-
-        bool Load(SKSE::SerializationInterface* ser, std::uint32_t version, std::uint32_t) {
-            if (version != kVersion) return false;
-            std::uint32_t count{};
-            if (!ser->ReadRecordData(&count, sizeof(count))) return false;
-
-            auto& m = state();
-            m.clear();
-
-            for (std::uint32_t i = 0; i < count; ++i) {
-                RE::FormID oldID{};
-                std::uint8_t raw{};
-                if (!(ser->ReadRecordData(&oldID, sizeof(oldID)) && ser->ReadRecordData(&raw, sizeof(raw)))) break;
-                RE::FormID newID{};
-                if (!ser->ResolveFormID(oldID, newID)) continue;
-                m[newID] = std::byte{raw};
-            }
-            return true;
-        }
-
-        void Revert() { state().clear(); }
     }
 
     void Set(const RE::Actor* a, Flag f, bool value) {
@@ -77,7 +44,40 @@ namespace ElementalStates {
     }
     void ClearAll() { Flags::state().clear(); }
 
-    void RegisterStore() {
-        Ser::Register({Flags::kRecordID, Flags::kVersion, &Flags::Save, &Flags::Load, &Flags::Revert});
+    namespace {
+        bool Save(SKSE::SerializationInterface* ser) {
+            const auto& m = Flags::state();
+            const auto count = static_cast<std::uint32_t>(m.size());
+            ser->WriteRecordData(&count, sizeof(count));
+            for (const auto& [id, b] : m) {
+                std::uint8_t raw = std::to_integer<std::uint8_t>(b);
+                ser->WriteRecordData(&id, sizeof(id));
+                ser->WriteRecordData(&raw, sizeof(raw));
+            }
+            return true;
+        }
+
+        bool Load(SKSE::SerializationInterface* ser, std::uint32_t version, std::uint32_t) {
+            if (version != Flags::kVersion) return false;
+            std::uint32_t count{};
+            if (!ser->ReadRecordData(&count, sizeof(count))) return false;
+
+            auto& m = Flags::state();
+            m.clear();
+
+            for (std::uint32_t i = 0; i < count; ++i) {
+                RE::FormID oldID{};
+                std::uint8_t raw{};
+                if (!(ser->ReadRecordData(&oldID, sizeof(oldID)) && ser->ReadRecordData(&raw, sizeof(raw)))) break;
+                RE::FormID newID{};
+                if (!ser->ResolveFormID(oldID, newID)) continue;
+                m[newID] = std::byte{raw};
+            }
+            return true;
+        }
+
+        void Revert() { Flags::state().clear(); }
     }
+
+    void RegisterStore() { Ser::Register({Flags::kRecordID, Flags::kVersion, &Save, &Load, &Revert}); }
 }
