@@ -91,10 +91,8 @@ namespace ElementalGauges {
         const auto i = Gauges::idx(t);
         const float nowH = NowHours();
 
-        const auto preTick = e.v[i];  // valor antes do decay
         Gauges::tickOne(e, i, nowH);
-        const auto before = e.v[i];  // valor após o decay
-        const auto decayed = static_cast<int>(preTick) - static_cast<int>(before);
+        const auto before = e.v[i];
 
         const int next = static_cast<int>(before) + delta;
         const auto after = clamp100(next);

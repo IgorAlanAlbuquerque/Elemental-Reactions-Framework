@@ -1,6 +1,6 @@
 #include "ElementalGauges.h"
+#include "ElementalGaugesHook.h"
 #include "ElementalStates.h"
-#include "MagicGaugesListener.h"
 #include "PCH.h"
 #include "RemoveDrains.h"
 #include "common/Helpers.h"
@@ -36,14 +36,13 @@ namespace {
             case SKSE::MessagingInterface::kDataLoaded:
                 spdlog::info("Removendo drains.");
                 RemoveDrains::RemoveDrainFromShockAndFrost();
-                MagicGauges::Install();
-                MagicGauges::ResetDebounce();
+                ElementalGaugesHook::Install();
+                ElementalGaugesHook::RegisterAEEventSink();
                 spdlog::info("listener de magias instalado.");
                 break;
             case SKSE::MessagingInterface::kNewGame:
                 [[fallthrough]];
             case SKSE::MessagingInterface::kPostLoadGame:
-                MagicGauges::ResetDebounce();
                 break;
             default:
                 break;
