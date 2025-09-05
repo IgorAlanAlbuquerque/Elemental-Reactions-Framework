@@ -62,6 +62,44 @@ namespace ElementalGauges {
 
         inline constexpr std::uint32_t kRecordID = FOURCC('G', 'A', 'U', 'V');
         inline constexpr std::uint32_t kVersion = 1;
+
+        inline constexpr float increaseMult = 0.30f;
+        inline constexpr float decreaseMult = 0.90f;
+
+        static int AdjustByStates(const RE::Actor* a, Type t, int delta) {
+            using enum ElementalGauges::Type;
+            if (!a || delta <= 0) return delta;
+
+            double f = 1.0;
+
+            const bool wet = ElementalStates::Get(a, ElementalStates::Flag::Wet);
+            const bool rubber = ElementalStates::Get(a, ElementalStates::Flag::Rubber);
+            const bool fur = ElementalStates::Get(a, ElementalStates::Flag::Fur);
+
+            switch (t) {
+                case Fire:
+                    if (wet)
+                        f *= decreaseMult;
+                    else if (fur || rubber)
+                        f *= increaseMult;
+                    break;
+                case Frost:
+                    if (fur)
+                        f *= decreaseMult;
+                    else if (wet || rubber)
+                        f *= increaseMult;
+                    break;
+                case Shock:
+                    if (rubber)
+                        f *= decreaseMult;
+                    else if (wet || fur)
+                        f *= increaseMult;
+                    break;
+            }
+
+            auto out = static_cast<int>(std::round(static_cast<double>(delta) * f));
+            return out;
+        }
     }
 
     std::uint8_t Get(const RE::Actor* a, Type t) {
@@ -92,10 +130,9 @@ namespace ElementalGauges {
         const float nowH = NowHours();
 
         Gauges::tickOne(e, i, nowH);
-        const auto before = e.v[i];
 
-        const int next = static_cast<int>(before) + delta;
-        const auto after = clamp100(next);
+        const int adj = Gauges::AdjustByStates(a, t, delta);
+        const auto after = clamp100(static_cast<int>(e.v[i]) + adj);
 
         e.v[i] = after;
         e.lastHitH[i] = nowH;
