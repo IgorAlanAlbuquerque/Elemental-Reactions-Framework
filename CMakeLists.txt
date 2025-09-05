@@ -17,10 +17,24 @@ add_commonlibsse_plugin(${PROJECT_NAME}
     src/Plugin.cpp
     src/RemoveDrains.cpp
     src/ElementalStates.cpp
+    src/common/PluginSerialization.cpp
+    src/ElementalGauges.cpp
+    src/ElementalGaugesHook.cpp
 )
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
-target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h src/ElementalStates.h src/RemoveDrains.h)
+
+target_precompile_headers(
+  ${PROJECT_NAME} PRIVATE 
+  src/PCH.h
+  src/ElementalStates.h
+  src/RemoveDrains.h
+  src/common/PluginSerialization.h
+  src/common/Helpers.h
+  src/ElementalGauges.h
+  src/ElementalGaugesHook.h
+)
+
 set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "SMSODestruction")
 
 if(DEFINED OUTPUT_FOLDER)

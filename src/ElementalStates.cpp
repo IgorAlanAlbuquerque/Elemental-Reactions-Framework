@@ -1,13 +1,11 @@
 #include "ElementalStates.h"
 
-#if !defined(__cpp_lib_to_underlying) || (__cpp_lib_to_underlying < 202102L)
-template <class Enum>
-constexpr std::underlying_type_t<Enum> to_underlying(Enum e) noexcept {
-    return static_cast<std::underlying_type_t<Enum>>(e);
-}
-#else
-using std::to_underlying;
-#endif
+#include <cstddef>
+#include <unordered_map>
+#include <utility>
+
+#include "common/Helpers.h"
+#include "common/PluginSerialization.h"
 
 namespace ElementalStates {
     namespace Flags {
@@ -20,10 +18,9 @@ namespace ElementalStates {
         }
 
         [[nodiscard]] constexpr std::byte bit(Flag f) noexcept {
-            return std::byte{1} << static_cast<int>(to_underlying(f));
+            return std::byte{1} << static_cast<int>(std::to_underlying(f));
         }
 
-        inline constexpr std::uint32_t kUniqueID = FOURCC('E', 'L', 'M', 'S');
         inline constexpr std::uint32_t kRecordID = FOURCC('F', 'L', 'G', 'S');
         inline constexpr std::uint32_t kVersion = 1;
     }
@@ -37,112 +34,51 @@ namespace ElementalStates {
         else
             b &= ~m;
     }
-
     bool Get(const RE::Actor* a, Flag f) {
         if (!a) return false;
-        const auto& map = Flags::state();
-        const auto it = map.find(a->GetFormID());
-        if (it == map.end()) return false;
+        const auto it = Flags::state().find(a->GetFormID());
+        if (it == Flags::state().end()) return false;
         return (it->second & Flags::bit(f)) != std::byte{0};
     }
-
     void Clear(const RE::Actor* a) {
-        if (!a) return;
-        Flags::state().erase(a->GetFormID());
+        if (a) Flags::state().erase(a->GetFormID());
     }
-
     void ClearAll() { Flags::state().clear(); }
 
-    // ----- Callbacks SKSE -----
-    static void OnSave(SKSE::SerializationInterface* ser) {
-        if (!ser) return;
-        if (!ser->OpenRecord(Flags::kRecordID, Flags::kVersion)) return;
-
-        const auto& map = Flags::state();
-        const auto count = static_cast<std::uint32_t>(map.size());
-        ser->WriteRecordData(&count, sizeof(count));
-
-        for (const auto& [formID, bits] : map) {
-            std::uint8_t raw = std::to_integer<std::uint8_t>(bits);
-            ser->WriteRecordData(&formID, sizeof(formID));
-            ser->WriteRecordData(&raw, sizeof(raw));
+    namespace {
+        bool Save(SKSE::SerializationInterface* ser) {
+            const auto& m = Flags::state();
+            const auto count = static_cast<std::uint32_t>(m.size());
+            ser->WriteRecordData(&count, sizeof(count));
+            for (const auto& [id, b] : m) {
+                std::uint8_t raw = std::to_integer<std::uint8_t>(b);
+                ser->WriteRecordData(&id, sizeof(id));
+                ser->WriteRecordData(&raw, sizeof(raw));
+            }
+            return true;
         }
-    }
 
-    static void OnLoad(SKSE::SerializationInterface* ser) {
-        if (!ser) return;
+        bool Load(SKSE::SerializationInterface* ser, std::uint32_t version, std::uint32_t) {
+            if (version != Flags::kVersion) return false;
+            std::uint32_t count{};
+            if (!ser->ReadRecordData(&count, sizeof(count))) return false;
 
-        std::uint32_t type{};
-        std::uint32_t version{};
-        std::uint32_t length{};
-        while (ser->GetNextRecordInfo(type, version, length)) {
-            if (type != Flags::kRecordID || version != Flags::kVersion) continue;
-
-            std::uint32_t count = 0;
-            if (!ser->ReadRecordData(&count, sizeof(count))) continue;
-
-            auto& map = Flags::state();
-            map.clear();
+            auto& m = Flags::state();
+            m.clear();
 
             for (std::uint32_t i = 0; i < count; ++i) {
                 RE::FormID oldID{};
                 std::uint8_t raw{};
-                if (!ser->ReadRecordData(&oldID, sizeof(oldID)) || !ser->ReadRecordData(&raw, sizeof(raw))) break;
-
+                if (!(ser->ReadRecordData(&oldID, sizeof(oldID)) && ser->ReadRecordData(&raw, sizeof(raw)))) break;
                 RE::FormID newID{};
                 if (!ser->ResolveFormID(oldID, newID)) continue;
-
-                map[newID] = std::byte{raw};
+                m[newID] = std::byte{raw};
             }
-        }
-    }
-
-    static void OnRevert(SKSE::SerializationInterface*) { Flags::state().clear(); }
-
-    void RegisterSerialization() {
-        auto* ser = SKSE::GetSerializationInterface();
-        ser->SetUniqueID(Flags::kUniqueID);
-        ser->SetSaveCallback(OnSave);
-        ser->SetLoadCallback(OnLoad);
-        ser->SetRevertCallback(OnRevert);
-    }
-}
-
-namespace ElementalStatesTest {
-    using enum ElementalStates::Flag;
-
-    void RunOnce() {
-        const RE::PlayerCharacter* pc = RE::PlayerCharacter::GetSingleton();
-        if (!pc) {
-            spdlog::error("[TEST] PlayerCharacter não encontrado");
-            return;
+            return true;
         }
 
-        // snapshot inicial
-        auto wet = ElementalStates::Get(pc, Wet);
-        auto rubber = ElementalStates::Get(pc, Rubber);
-        auto fur = ElementalStates::Get(pc, Fur);
-        auto fat = ElementalStates::Get(pc, Fat);
-        spdlog::info("[TEST] inicial: Wet={} Rubber={} Fur={} Fat={}", wet, rubber, fur, fat);
-
-        // liga duas flags
-        ElementalStates::Set(pc, Wet, true);
-        ElementalStates::Set(pc, Rubber, true);
-
-        spdlog::info("[TEST] depois de set: Wet={} Rubber={} Fur={} Fat={}", ElementalStates::Get(pc, Wet),
-                     ElementalStates::Get(pc, Rubber), ElementalStates::Get(pc, Fur), ElementalStates::Get(pc, Fat));
-
-        // alterna
-        ElementalStates::Set(pc, Wet, false);
-        ElementalStates::Set(pc, Rubber, false);
-        ElementalStates::Set(pc, Fur, true);
-        ElementalStates::Set(pc, Fat, true);
-
-        spdlog::info("[TEST] depois do toggle: Wet={} Rubber={} Fur={} Fat={}", ElementalStates::Get(pc, Wet),
-                     ElementalStates::Get(pc, Rubber), ElementalStates::Get(pc, Fur), ElementalStates::Get(pc, Fat));
-        ElementalStates::Set(pc, Wet, wet);
-        ElementalStates::Set(pc, Rubber, rubber);
-        ElementalStates::Set(pc, Fur, fur);
-        ElementalStates::Set(pc, Fat, fat);
+        void Revert() { Flags::state().clear(); }
     }
+
+    void RegisterStore() { Ser::Register({Flags::kRecordID, Flags::kVersion, &Save, &Load, &Revert}); }
 }
