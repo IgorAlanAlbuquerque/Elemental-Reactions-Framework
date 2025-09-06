@@ -9,3 +9,5 @@ cmake-build*
 *.pdb
 
 *.bsa
+
+.VSCodeCounter/*
