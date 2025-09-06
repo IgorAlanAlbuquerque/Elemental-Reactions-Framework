@@ -6,30 +6,51 @@
 #include "SKSE/SKSE.h"
 
 namespace ElementalGauges {
+
     enum class Type : std::uint8_t { Fire = 0, Frost = 1, Shock = 2 };
 
-    struct FullTrigger {
-        using Callback = void (*)(RE::Actor* actor, Type t, void* user);
+    enum class Combo : std::uint8_t {
+        Fire = 0,
+        Frost,
+        Shock,
+        FireFrost,
+        FrostFire,
+        FireShock,
+        ShockFire,
+        FrostShock,
+        ShockFrost,
+        FireFrostShock,
+        _COUNT
+    };
 
+    struct SumComboTrigger {
+        using Callback = void (*)(RE::Actor* actor, Combo which, void* user);
         Callback cb{nullptr};
         void* user{nullptr};
 
-        float lockoutSeconds{0.0f};
-        bool lockoutIsRealTime{false};
+        // Regras
+        float majorityPct{0.85f};
+        float tripleMinPct{0.28f};
 
-        bool clearOnTrigger{true};
+        // Execução / antispam
+        float cooldownSeconds{0.5f};
+        bool cooldownIsRealTime{true};
         bool deferToTask{true};
+        bool clearAllOnTrigger{true};
+
+        // NOVO: lockout para ACUMULAR GAUGE dos elementos envolvidos no combo
+        float elementLockoutSeconds{0.0f};    // 0 = sem lockout de acumulo
+        bool elementLockoutIsRealTime{true};  // true = segundos reais; false = tempo de jogo
     };
 
-    void SetOnFull(Type t, const FullTrigger& cfg);
-
-    void RegisterStore();
+    void SetOnSumCombo(Combo c, const SumComboTrigger& cfg);
 
     std::uint8_t Get(RE::Actor* a, Type t);
     void Set(RE::Actor* a, Type t, std::uint8_t value);
     void Add(RE::Actor* a, Type t, int delta);
     void Clear(RE::Actor* a);
-    void ClearAll();
+
+    void RegisterStore();
 }
 
 namespace ElementalGaugesDecay {
