@@ -59,7 +59,6 @@ namespace GaugesHook {
     static std::unordered_map<const RE::ActiveEffect*, EffCtx> g_ctx;  // NOSONAR
     static std::shared_mutex g_ctxMx;                                  // NOSONAR
 
-    // -------- acumulador por alvo+elemento (para não perder frações) --------
     static std::unordered_map<std::uint64_t, double> g_accum;  // NOSONAR
     static std::shared_mutex g_accumMx;                        // NOSONAR
     static std::uint64_t MakeKey(const RE::Actor* a, Elem e) {
@@ -82,7 +81,7 @@ namespace GaugesHook {
             const RE::Actor* tgt = e->target ? e->target->As<RE::Actor>() : nullptr;
 
             if (!e->isApplied) {
-                {  // apaga ctx desse UID (e opcionalmente do alvo)
+                {
                     std::unique_lock lk(g_ctxMx);
                     std::erase_if(g_ctx, [&](auto& kv) {
                         const auto& ctx = kv.second;
@@ -94,7 +93,7 @@ namespace GaugesHook {
                         return true;
                     });
                 }
-                if (tgt) {  // limpa acumuladores do alvo
+                if (tgt) {
                     const auto base = static_cast<std::uint64_t>(tgt->GetFormID()) << 8;
                     std::unique_lock lk(g_accumMx);
                     for (auto it = g_accum.begin(); it != g_accum.end();)
@@ -118,7 +117,7 @@ namespace GaugesHook {
         static inline Fn* _orig{};
 
         static void thunk(T* self, RE::MagicTarget* mt) {
-            _orig(self, mt);  // deixa o jogo anexar o efeito
+            _orig(self, mt);
             const auto* mgef = self->GetBaseObject();
             RE::Actor* actor = AsActor(self->target);
             if (!mgef || !actor) return;
@@ -144,7 +143,7 @@ namespace GaugesHook {
             RE::Actor* target = nullptr;
             Elem elem{};
             bool haveCtx = false;
-            {  // tenta do mapa
+            {
                 std::shared_lock lk(g_ctxMx);
                 if (auto it = g_ctx.find(self); it != g_ctx.end()) {
                     haveCtx = true;
@@ -152,7 +151,7 @@ namespace GaugesHook {
                     elem = it->second.elem;
                 }
             }
-            // lazy init (1ª passada)
+
             if (!haveCtx) {
                 const auto* mgef = self->GetBaseObject();
                 RE::Actor* actor = AsActor(self->target);

@@ -5,5 +5,5 @@
 
 namespace ElementalGaugesHook {
     void Install();
-    void RegisterAEEventSink();  // chame uma vez após DataLoaded
+    void RegisterAEEventSink();
 }

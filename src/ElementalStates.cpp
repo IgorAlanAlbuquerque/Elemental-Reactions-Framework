@@ -25,7 +25,7 @@ namespace ElementalStates {
         inline constexpr std::uint32_t kVersion = 1;
     }
 
-    void Set(const RE::Actor* a, Flag f, bool value) {
+    void Set(RE::Actor* a, Flag f, bool value) {
         if (!a) return;
         auto& b = Flags::state()[a->GetFormID()];
         const auto m = Flags::bit(f);
@@ -34,13 +34,13 @@ namespace ElementalStates {
         else
             b &= ~m;
     }
-    bool Get(const RE::Actor* a, Flag f) {
+    bool Get(RE::Actor* a, Flag f) {
         if (!a) return false;
         const auto it = Flags::state().find(a->GetFormID());
         if (it == Flags::state().end()) return false;
         return (it->second & Flags::bit(f)) != std::byte{0};
     }
-    void Clear(const RE::Actor* a) {
+    void Clear(RE::Actor* a) {
         if (a) Flags::state().erase(a->GetFormID());
     }
     void ClearAll() { Flags::state().clear(); }

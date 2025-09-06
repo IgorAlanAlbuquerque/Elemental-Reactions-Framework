@@ -8,12 +8,27 @@
 namespace ElementalGauges {
     enum class Type : std::uint8_t { Fire = 0, Frost = 1, Shock = 2 };
 
+    struct FullTrigger {
+        using Callback = void (*)(RE::Actor* actor, Type t, void* user);
+
+        Callback cb{nullptr};
+        void* user{nullptr};
+
+        float lockoutSeconds{0.0f};
+        bool lockoutIsRealTime{false};
+
+        bool clearOnTrigger{true};
+        bool deferToTask{true};
+    };
+
+    void SetOnFull(Type t, const FullTrigger& cfg);
+
     void RegisterStore();
 
-    std::uint8_t Get(const RE::Actor* a, Type t);
-    void Set(const RE::Actor* a, Type t, std::uint8_t value);  // clamp 0..100
-    void Add(const RE::Actor* a, Type t, int delta);           // saturating add
-    void Clear(const RE::Actor* a);
+    std::uint8_t Get(RE::Actor* a, Type t);
+    void Set(RE::Actor* a, Type t, std::uint8_t value);
+    void Add(RE::Actor* a, Type t, int delta);
+    void Clear(RE::Actor* a);
     void ClearAll();
 }
 
