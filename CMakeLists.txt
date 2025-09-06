@@ -20,6 +20,7 @@ add_commonlibsse_plugin(${PROJECT_NAME}
     src/common/PluginSerialization.cpp
     src/ElementalGauges.cpp
     src/ElementalGaugesHook.cpp
+    src/ElementalEffects.cpp
 )
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
@@ -33,6 +34,7 @@ target_precompile_headers(
   src/common/Helpers.h
   src/ElementalGauges.h
   src/ElementalGaugesHook.h
+  src/ElementalEffects.h
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "SMSODestruction")

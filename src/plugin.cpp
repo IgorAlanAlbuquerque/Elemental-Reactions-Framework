@@ -1,3 +1,4 @@
+#include "ElementalEffects.h"
 #include "ElementalGauges.h"
 #include "ElementalGaugesHook.h"
 #include "ElementalStates.h"
@@ -38,7 +39,9 @@ namespace {
                 RemoveDrains::RemoveDrainFromShockAndFrost();
                 ElementalGaugesHook::Install();
                 ElementalGaugesHook::RegisterAEEventSink();
-                spdlog::info("listener de magias instalado.");
+                spdlog::info("Hook para gauges instalado.");
+                ElementalEffects::ConfigurarGatilhos();
+                spdlog::info("Efeitos registrados.");
                 break;
             case SKSE::MessagingInterface::kNewGame:
                 [[fallthrough]];
