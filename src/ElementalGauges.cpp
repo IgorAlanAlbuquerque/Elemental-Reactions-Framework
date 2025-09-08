@@ -355,6 +355,110 @@ namespace ElementalGauges {
             }
             return true;
         }
+
+        constexpr std::uint32_t kFire = 0xF04A3A;
+        constexpr std::uint32_t kFrost = 0x4FB2FF;
+        constexpr std::uint32_t kShock = 0xB671FF;
+        constexpr std::uint32_t kNeutral = 0xFFFFFF;
+
+        // Duplas – vermelho/azul/roxo bias
+        constexpr std::uint32_t kFireFrost_RedBias = 0xE04E9B;
+        constexpr std::uint32_t kFrostFire_BlueBias = 0x6A7DFF;
+
+        constexpr std::uint32_t kFireShock_RedBias = 0xD955C3;
+        constexpr std::uint32_t kShockFire_VioBias = 0xBF4EEA;
+
+        constexpr std::uint32_t kFrostShock_BlueBias = 0x6F84FF;
+        constexpr std::uint32_t kShockFrost_VioBias = 0x9F7BFF;
+
+        // Triplo
+        constexpr std::uint32_t kTripleMix = 0xD986FF;
+
+        inline std::uint32_t TintForIndex(ElementalGauges::Combo c) {
+            using C = ElementalGauges::Combo;
+            switch (c) {
+                case C::Fire:
+                    return kFire;
+                case C::Frost:
+                    return kFrost;
+                case C::Shock:
+                    return kShock;
+
+                case C::FireFrost:
+                    return kFireFrost_RedBias;  // dominante = Fire
+                case C::FrostFire:
+                    return kFrostFire_BlueBias;  // dominante = Frost
+
+                case C::FireShock:
+                    return kFireShock_RedBias;  // dominante = Fire
+                case C::ShockFire:
+                    return kShockFire_VioBias;  // dominante = Shock
+
+                case C::FrostShock:
+                    return kFrostShock_BlueBias;  // dominante = Frost
+                case C::ShockFrost:
+                    return kShockFrost_VioBias;  // dominante = Shock
+
+                case C::FireFrostShock:
+                    return kTripleMix;
+
+                default:
+                    return kNeutral;
+            }
+        }
+
+        // Mapeia Combo -> arquivo de ícone (pares direcionais compartilham)
+        inline ElementalGauges::HudIcon IconForCombo(Combo c) {
+            using enum ElementalGauges::HudIcon;
+            using ElementalGauges::Combo;
+            switch (c) {
+                case Combo::Fire:
+                    return Fire;
+                case Combo::Frost:
+                    return Frost;
+                case Combo::Shock:
+                    return Shock;
+                case Combo::FireFrost:
+                case Combo::FrostFire:
+                    return FireFrost;
+                case Combo::FireShock:
+                case Combo::ShockFire:
+                    return FireShock;
+                case Combo::FrostShock:
+                case Combo::ShockFrost:
+                    return FrostShock;
+                case Combo::FireFrostShock:
+                    return FireFrostShock;
+                default:
+                    return Fire;
+            }
+        }
+
+        // Versão para HUD: MESMAS regras do PickRules (85% / 28%), mas sem exigir soma >= 100
+        std::optional<Combo> ChooseHudCombo(const std::array<std::uint8_t, 3>& tot) {
+            const int sum = int(tot[0]) + int(tot[1]) + int(tot[2]);
+            if (sum <= 0) return std::nullopt;
+
+            const auto& rules = PickRules();
+            const float p0 = tot[0] / float(sum);
+            const float p1 = tot[1] / float(sum);
+            const float p2 = tot[2] / float(sum);
+
+            // 1) Solo se ≥ majorityPct (ex.: 85%)
+            if (p0 >= rules.majorityPct) return Combo::Fire;
+            if (p1 >= rules.majorityPct) return Combo::Frost;
+            if (p2 >= rules.majorityPct) return Combo::Shock;
+
+            // 2) Triplo se os 3 presentes e minPct ≥ tripleMinPct (ex.: 28%)
+            if ((tot[0] > 0) && (tot[1] > 0) && (tot[2] > 0)) {
+                const float minPct = std::min({p0, p1, p2});
+                if (minPct >= rules.tripleMinPct) return Combo::FireFrostShock;
+            }
+
+            // 3) Caso contrário, par direcional entre os dois maiores
+            auto order = rank3(tot);  // [maior, segundo, menor]
+            return makePairDirectional(order[0], order[1]);
+        }
     }
 
     // ============================
@@ -419,6 +523,76 @@ namespace ElementalGauges {
     void Clear(RE::Actor* a) {
         if (!a) return;
         Gauges::state().erase(a->GetFormID());
+    }
+
+    void ForEachDecayed(const std::function<void(RE::FormID, const Totals&)>& fn) {
+        auto& m = Gauges::state();
+        const float nowH = NowHours();
+
+        for (auto it = m.begin(); it != m.end();) {
+            auto& e = it->second;
+            Gauges::tickAll(e, nowH);
+
+            if ((e.v[0] | e.v[1] | e.v[2]) != 0) {
+                Totals t{e.v[0], e.v[1], e.v[2]};
+                fn(it->first, t);
+                ++it;
+            } else {
+                it = m.erase(it);  // GC: remove atores que zeraram
+            }
+        }
+    }
+
+    std::vector<std::pair<RE::FormID, Totals>> SnapshotDecayed() {
+        std::vector<std::pair<RE::FormID, Totals>> out;
+        // opcional: out.reserve(Gauges::state().size());
+        ForEachDecayed([&](RE::FormID id, const Totals& t) { out.emplace_back(id, t); });
+        return out;
+    }
+
+    std::optional<Totals> GetTotalsDecayed(RE::FormID id) {
+        auto& m = Gauges::state();
+        const float nowH = NowHours();
+
+        if (auto it = m.find(id); it != m.end()) {
+            auto& e = it->second;
+            Gauges::tickAll(e, nowH);
+
+            if ((e.v[0] | e.v[1] | e.v[2]) != 0) {
+                return Totals{e.v[0], e.v[1], e.v[2]};
+            } else {
+                m.erase(it);  // GC pontual
+                return std::nullopt;
+            }
+        }
+        return std::nullopt;
+    }
+
+    void GarbageCollectDecayed() {
+        // Reaproveita a lógica
+        ForEachDecayed([](RE::FormID, const Totals&) {});
+    }
+
+    std::optional<HudIconSel> PickHudIcon(const Totals& t) {
+        const std::array<std::uint8_t, 3> v{t.fire, t.frost, t.shock};
+        auto whichOpt = ChooseHudCombo(v);
+        if (!whichOpt) return std::nullopt;
+        const Combo which = *whichOpt;
+
+        // Ícone (pares direcionais compartilham arquivo)
+        const HudIcon icon = IconForCombo(which);
+
+        // Tint: neutro para solo/triplo; nos pares, cor do elemento dominante
+        const std::uint32_t tint = TintForIndex(which);
+
+        return HudIconSel{static_cast<int>(std::to_underlying(icon)), tint, which};
+    }
+
+    std::optional<HudIconSel> PickHudIconDecayed(RE::FormID id) {
+        if (auto t = GetTotalsDecayed(id)) {
+            return PickHudIcon(*t);
+        }
+        return std::nullopt;
     }
 
     // ============================

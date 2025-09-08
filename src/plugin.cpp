@@ -1,3 +1,7 @@
+#include <atomic>
+#include <chrono>
+#include <thread>
+
 #include "ElementalEffects.h"
 #include "ElementalGauges.h"
 #include "ElementalGaugesHook.h"
@@ -6,6 +10,8 @@
 #include "RemoveDrains.h"
 #include "common/Helpers.h"
 #include "common/PluginSerialization.h"
+#include "hud/HUDTick.h"
+#include "hud/InjectHUD.h"
 
 #ifndef DLLEXPORT
     #include "REL/Relocation.h"
@@ -42,6 +48,8 @@ namespace {
                 spdlog::info("Hook para gauges instalado.");
                 ElementalEffects::ConfigurarGatilhos();
                 spdlog::info("Efeitos registrados.");
+                HUD::InitTrueHUDInjection();
+                HUD::StartHUDTick();
                 break;
             case SKSE::MessagingInterface::kNewGame:
                 [[fallthrough]];
