@@ -1,0 +1,38 @@
+<movie width="256" height="256" framerate="30" version="8">
+  <background color="#000000"/>
+
+  <library>
+    <!-- ícones-->
+    <bitmap id="icon_fire"  import="../../source/icons/icon_fire.png"/>
+    <bitmap id="icon_frost" import="../../source/icons/icon_frost.png"/>
+    <bitmap id="icon_shock" import="../../source/icons/icon_shock.png"/>
+    <bitmap id="icon_fire_frost" import="../../source/icons/icon_fire_frost.png"/>
+    <bitmap id="icon_fire_shock" import="../../source/icons/icon_fire_shock.png"/>
+    <bitmap id="icon_frost_shock" import="../../source/icons/icon_frost_shock.png"/>
+    <bitmap id="icon_fire_frost_shock" import="../../source/icons/icon_fire_frost_shock.png"/>
+
+    <!-- CLIP DE BIBLIOTECA: SMSO_Gauge -->
+    <clip id="SMSO_Gauge" export="SMSO_Gauge">
+      <frame>
+        <!-- anel: fundo + 3 camadas -->
+        <place id="empty" name="ring_bg_mc"    x="0" y="0"/>
+        <place id="empty" name="ring_fire_mc"  x="0" y="0"/>
+        <place id="empty" name="ring_frost_mc" x="0" y="0"/>
+        <place id="empty" name="ring_shock_mc" x="0" y="0"/>
+
+        <!-- ícones centrados no (0,0); a classe vai posicionar/escala -->
+        <place id="icon_fire"  name="icon_fire_mc"  x="0" y="0"/>
+        <place id="icon_frost" name="icon_frost_mc" x="0" y="0"/>
+        <place id="icon_shock" name="icon_shock_mc" x="0" y="0"/>
+        <place id="icon_fire_frost"       name="icon_fire_frost_mc"       x="0" y="0"/>
+        <place id="icon_fire_shock"       name="icon_fire_shock_mc"       x="0" y="0"/>
+        <place id="icon_frost_shock"      name="icon_frost_shock_mc"      x="0" y="0"/>
+        <place id="icon_fire_frost_shock" name="icon_fire_frost_shock_mc" x="0" y="0"/>
+      </frame>
+    </clip>
+
+    <!-- clip vazio que uso como caneta -->
+    <clip id="empty"/>
+  </library>
+  <frame/>
+</movie>
