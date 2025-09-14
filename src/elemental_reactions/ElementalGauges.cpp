@@ -11,9 +11,9 @@
 #include <unordered_map>
 #include <utility>
 
+#include "../common/Helpers.h"
+#include "../common/PluginSerialization.h"
 #include "ElementalStates.h"
-#include "common/Helpers.h"
-#include "common/PluginSerialization.h"
 
 using namespace ElementalGaugesDecay;
 

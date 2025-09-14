@@ -2,14 +2,14 @@
 #include <chrono>
 #include <thread>
 
-#include "ElementalEffects.h"
-#include "ElementalGauges.h"
-#include "ElementalGaugesHook.h"
-#include "ElementalStates.h"
 #include "PCH.h"
-#include "RemoveDrains.h"
+#include "TrueHUDAPI.h"
 #include "common/Helpers.h"
 #include "common/PluginSerialization.h"
+#include "elemental_reactions/ElementalEffects.h"
+#include "elemental_reactions/ElementalGauges.h"
+#include "elemental_reactions/ElementalGaugesHook.h"
+#include "elemental_reactions/ElementalStates.h"
 #include "hud/HUDTick.h"
 #include "hud/InjectHUD.h"
 
@@ -39,17 +39,41 @@ namespace {
     void GlobalMessageHandler(SKSE::MessagingInterface::Message* msg) {
         if (!msg) return;
 
+        const auto trueHUD =
+            static_cast<TRUEHUD_API::IVTrueHUD4*>(TRUEHUD_API::RequestPluginAPI(TRUEHUD_API::InterfaceVersion::V4));
         switch (msg->type) {
             case SKSE::MessagingInterface::kDataLoaded:
-                spdlog::info("Removendo drains.");
-                RemoveDrains::RemoveDrainFromShockAndFrost();
                 ElementalGaugesHook::Install();
                 ElementalGaugesHook::RegisterAEEventSink();
                 spdlog::info("Hook para gauges instalado.");
                 ElementalEffects::ConfigurarGatilhos();
-                spdlog::info("Efeitos registrados.");
-                HUD::InitTrueHUDInjection();
-                HUD::StartHUDTick();
+                spdlog::info("Efeitos elementais registrados.");
+
+                // Inicializa TrueHUD
+                if (!trueHUD) {
+                    spdlog::warn("[SMSO] TrueHUD não detectado. Widget não será carregado.");
+                    return;
+                }
+                spdlog::info("[SMSO] TrueHUD detectado.");
+                InjectHUD::g_trueHUD = trueHUD;
+                InjectHUD::g_pluginHandle = SKSE::GetPluginHandle();
+
+                // Registra o tipo de widget customizado
+                InjectHUD::g_trueHUD->LoadCustomWidgets(
+                    InjectHUD::g_pluginHandle, InjectHUD::SMSO_SWF_PATH, [](TRUEHUD_API::APIResult result) {
+                        spdlog::info("[SMSO] Resultado do LoadCustomWidgets: {}", static_cast<int>(result));
+
+                        if (result == TRUEHUD_API::APIResult::OK) {
+                            InjectHUD::g_trueHUD->RegisterNewWidgetType(InjectHUD::g_pluginHandle,
+                                                                        InjectHUD::SMSO_WIDGET_TYPE);
+                            spdlog::info("Widget registrado");
+
+                            HUD::StartHUDTick();
+                            spdlog::info("Loop de HUD iniciado.");
+                        } else {
+                            spdlog::error("[SMSO] Falha ao carregar o SWF dos widgets!");
+                        }
+                    });
                 break;
             case SKSE::MessagingInterface::kNewGame:
                 [[fallthrough]];

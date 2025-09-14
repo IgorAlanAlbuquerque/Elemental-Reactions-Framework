@@ -1,47 +1,68 @@
-// HUDTick.cpp
 #include "HUDTick.h"
 
 #include <chrono>
 #include <thread>
+#include <unordered_map>
 
-#include "../ElementalGauges.h"
+#include "../elemental_reactions/ElementalGauges.h"
 #include "InjectHUD.h"
 #include "RE/Skyrim.h"
 #include "SKSE/SKSE.h"
 
 namespace {
     std::atomic_bool g_run{false};
+    std::unordered_map<RE::FormID, float> lastSeen;
+    constexpr float TIMEOUT_SECONDS = 5.0f;
+
+    std::unordered_map<RE::FormID, float> lastAddedAt;
+    constexpr float INIT_GRACE_SECONDS = 0.30f;  // ~300 ms
 
     void UpdateAllOnUIThread() {
-        RE::UI* ui = RE::UI::GetSingleton();
-        if (!ui || !ui->IsMenuOpen(RE::BSFixedString("TrueHUD"))) return;
-
-        RE::GPtr<RE::IMenu> menu = ui->GetMenu(RE::BSFixedString("TrueHUD"));
-        RE::GFxMovieView* view = menu ? menu->uiMovie.get() : nullptr;
-        if (!view) return;
+        spdlog::info("[SMSO] Entrou no update");
+        float now = RE::Calendar::GetSingleton()->GetCurrentGameTime() * 3600.0f;
 
         std::vector<RE::FormID> alive;
         alive.reserve(64);
 
         ElementalGauges::ForEachDecayed([&](RE::FormID id, const ElementalGauges::Totals& t) {
+            spdlog::info("[SMSO] HUDTick decayed: id={:08X} F={} R={} S={}", id, t.fire, t.frost, t.shock);
             RE::Actor* a = RE::TESForm::LookupByID<RE::Actor>(id);
             if (!a || a->IsDead()) {
-                HUD::RemoveGaugeFor(view, a);
+                InjectHUD::RemoveFor(id);
+                lastAddedAt.erase(id);
                 return;
             }
 
-            int iconId = 0;
-            std::uint32_t tint = 0xFFFFFF;
-            if (auto sel = ElementalGauges::PickHudIcon(t)) {
-                iconId = sel->id;
-                tint = sel->tintRGB;
+            InjectHUD::AddFor(a);
+
+            bool justAdded = false;
+            if (!lastAddedAt.contains(id)) {
+                lastAddedAt[id] = now;
+                justAdded = true;
+            } else if ((now - lastAddedAt[id]) < INIT_GRACE_SECONDS) {
+                justAdded = true;
             }
 
-            HUD::EnsureGaugeFor(view, a);
-            HUD::UpdateGaugeFor(view, a, t.fire, t.frost, t.shock, iconId, tint);
+            if (!justAdded) {
+                InjectHUD::UpdateFor(a);
+            } else {
+                spdlog::info("[SMSO] Aguardando init do widget {:08X} antes de atualizar...", id);
+            }
 
             alive.push_back(id);
+            lastSeen[id] = now;
         });
+
+        for (auto it = lastSeen.begin(); it != lastSeen.end();) {
+            if (std::find(alive.begin(), alive.end(), it->first) == alive.end() &&
+                (now - it->second) >= TIMEOUT_SECONDS) {
+                InjectHUD::RemoveFor(it->first);
+                lastAddedAt.erase(it->first);
+                it = lastSeen.erase(it);
+                continue;
+            }
+            ++it;
+        }
     }
 }
 
