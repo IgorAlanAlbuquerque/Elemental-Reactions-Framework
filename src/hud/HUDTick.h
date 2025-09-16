@@ -4,4 +4,5 @@
 namespace HUD {
     void StartHUDTick();
     void StopHUDTick();
+    void ResetTracking();
 }

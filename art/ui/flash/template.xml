@@ -21,14 +21,13 @@
     </clip>
 
     <!-- WRAPPERS: convertem cada bitmap em MovieClip -->
-    <clip id="mc_icon_fire"><frame><place id="icon_fire"/></frame></clip>
-    <clip id="mc_icon_frost"><frame><place id="icon_frost"/></frame></clip>
-    <clip id="mc_icon_shock"><frame><place id="icon_shock"/></frame></clip>
-    <clip id="mc_icon_fire_frost"><frame><place id="icon_fire_frost"/></frame></clip>
-    <clip id="mc_icon_fire_shock"><frame><place id="icon_fire_shock"/></frame></clip>
-    <clip id="mc_icon_frost_shock"><frame><place id="icon_frost_shock"/></frame></clip>
-    <clip id="mc_icon_fire_frost_shock"><frame><place id="icon_fire_frost_shock"/></frame></clip>
-
+    <clip id="mc_icon_fire"><frame><place id="icon_fire" depth="1"/></frame></clip>
+    <clip id="mc_icon_frost"><frame><place id="icon_frost" depth="1"/></frame></clip>
+    <clip id="mc_icon_shock"><frame><place id="icon_shock" depth="1"/></frame></clip>
+    <clip id="mc_icon_fire_frost"><frame><place id="icon_fire_frost" depth="1"/></frame></clip>
+    <clip id="mc_icon_fire_shock"><frame><place id="icon_fire_shock" depth="1"/></frame></clip>
+    <clip id="mc_icon_frost_shock"><frame><place id="icon_frost_shock" depth="1"/></frame></clip>
+    <clip id="mc_icon_fire_frost_shock"><frame><place id="icon_fire_frost_shock" depth="1"/></frame></clip>
     <!-- Símbolo exportado que o TrueHUD instancia -->
     <clip id="SMSO_Gauge" export="SMSO_Gauge">
       <frame>

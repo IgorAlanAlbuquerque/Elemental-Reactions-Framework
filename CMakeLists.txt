@@ -49,6 +49,7 @@ add_commonlibsse_plugin(${PROJECT_NAME}
     src/elemental_reactions/ElementalEffects.cpp
     src/hud/HUDTick.cpp
     src/hud/InjectHUD.cpp
+    src/hud/TrueHUDMenuWatcher.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${truehud_SOURCE_DIR}/src)
@@ -66,6 +67,7 @@ target_precompile_headers(
   src/elemental_reactions/ElementalEffects.h
   src/hud/HUDTick.h
   src/hud/InjectHUD.h
+  src/hud/TrueHUDMenuWatcher.h
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES

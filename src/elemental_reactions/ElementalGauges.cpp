@@ -61,18 +61,27 @@ namespace ElementalGauges {
                 return;
             }
 
-            const float tRef = std::max(eval, hit);
-            const float untilDecay = tRef + GraceGameHours();
-            if (nowH <= untilDecay) return;
+            const float graceEnd = hit + GraceGameHours();
+            if (nowH <= graceEnd) {
+                return;
+            }
 
-            const float elapsedH = nowH - untilDecay;
-            const float decF = elapsedH * DecayPerGameHour();
+            const float startH = std::max(eval, graceEnd);
+            const float elapsedH = nowH - startH;
+            const float rate = DecayPerGameHour();
+            const float decF = elapsedH * rate;
+            const auto decI = static_cast<int>(decF);
 
-            int next = static_cast<int>(val) - static_cast<int>(decF);
+            if (decI <= 0) {
+                return;
+            }
+
+            int next = static_cast<int>(val) - decI;
             if (next < 0) next = 0;
-
             val = static_cast<std::uint8_t>(next);
-            eval = nowH;
+
+            const float rem = decF - decI;
+            eval = nowH - (rem / rate);
         }
 
         inline void tickAll(Entry& e, float nowH) {

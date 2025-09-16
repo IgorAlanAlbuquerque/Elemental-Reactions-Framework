@@ -1,102 +1,124 @@
 #include "ElementalEffects.h"
 
-namespace ElementalEffects {
+#include "../hud/InjectHUD.h"
+#include "ElementalGauges.h"
+#include "RE/Skyrim.h"
+#include "SKSE/SKSE.h"
+
+namespace {
     using Combo = ElementalGauges::Combo;
 
-    // --- SOLO ---
+    struct HudComboParams {
+        float seconds;
+        bool realTime;
+    };
+    static HudComboParams gHUD_All{10.0f, true};
+
     static void FxSoloFire(RE::Actor* a, Combo, void*) {
-        if (!a) return;
-        spdlog::info("[SMSO] SOLO Fire");
+        if (a) spdlog::info("[SMSO] SOLO Fire");
     }
     static void FxSoloFrost(RE::Actor* a, Combo, void*) {
-        if (!a) return;
-        spdlog::info("[SMSO] SOLO Frost");
+        if (a) spdlog::info("[SMSO] SOLO Frost");
     }
     static void FxSoloShock(RE::Actor* a, Combo, void*) {
-        if (!a) return;
-        spdlog::info("[SMSO] SOLO Shock");
+        if (a) spdlog::info("[SMSO] SOLO Shock");
     }
 
-    // --- PARES DIRECIONAIS ---
     static void FxPairFireFrost(RE::Actor* a, Combo, void*) {
-        if (!a) return;
-        spdlog::info("[SMSO] Pair FireFrost");
+        if (a) spdlog::info("[SMSO] Pair FireFrost");
     }
-
     static void FxPairFrostFire(RE::Actor* a, Combo, void*) {
-        if (!a) return;
-        spdlog::info("[SMSO] Pair FrostFire");
+        if (a) spdlog::info("[SMSO] Pair FrostFire");
     }
-
     static void FxPairFireShock(RE::Actor* a, Combo, void*) {
-        if (!a) return;
-        spdlog::info("[SMSO] Pair FireShock");
+        if (a) spdlog::info("[SMSO] Pair FireShock");
     }
-
     static void FxPairShockFire(RE::Actor* a, Combo, void*) {
-        if (!a) return;
-        spdlog::info("[SMSO] Pair ShockFire");
+        if (a) spdlog::info("[SMSO] Pair ShockFire");
     }
-
     static void FxPairFrostShock(RE::Actor* a, Combo, void*) {
-        if (!a) return;
-        spdlog::info("[SMSO] Pair FrostShock");
+        if (a) spdlog::info("[SMSO] Pair FrostShock");
     }
-
     static void FxPairShockFrost(RE::Actor* a, Combo, void*) {
-        if (!a) return;
-        spdlog::info("[SMSO] Pair ShockFrost");
+        if (a) spdlog::info("[SMSO] Pair ShockFrost");
     }
 
-    // --- TRIPLO ---
     static void FxTriple(RE::Actor* a, Combo, void*) {
-        if (!a) return;
-        spdlog::info("[SMSO] TRIPLE Fire+Frost+Shock");
+        if (a) spdlog::info("[SMSO] TRIPLE Fire+Frost+Shock");
     }
 
-    void ConfigurarGatilhos() {
-        using ElementalGauges::SetOnSumCombo;
-        using ElementalGauges::SumComboTrigger;
-
-        // Thresholds das TUAS regras
-        SumComboTrigger cx{};
-        cx.majorityPct = 0.85f;     // solo se ≥85%
-        cx.tripleMinPct = 0.28f;    // triplo se min ≥28% e 3 presentes
-        cx.cooldownSeconds = 0.5f;  // anti-spam
-        cx.cooldownIsRealTime = true;
-        cx.clearAllOnTrigger = true;         // zera F/Fr/S ao disparar
-        cx.deferToTask = true;               // roda fora do hook crítico
-        cx.elementLockoutSeconds = 2.0f;     // 2s sem acumular os elementos envolvidos
-        cx.elementLockoutIsRealTime = true;  // em tempo real
-
-        // --- SOLO ---
-        cx.cb = &FxSoloFire;
-        SetOnSumCombo(Combo::Fire, cx);
-        cx.cb = &FxSoloFrost;
-        SetOnSumCombo(Combo::Frost, cx);
-        cx.cb = &FxSoloShock;
-        SetOnSumCombo(Combo::Shock, cx);
-
-        // --- PARES DIRECIONAIS ---
-        cx.cb = &FxPairFireFrost;
-        SetOnSumCombo(Combo::FireFrost, cx);
-        cx.cb = &FxPairFrostFire;
-        SetOnSumCombo(Combo::FrostFire, cx);
-
-        cx.cb = &FxPairFireShock;
-        SetOnSumCombo(Combo::FireShock, cx);
-        cx.cb = &FxPairShockFire;
-        SetOnSumCombo(Combo::ShockFire, cx);
-
-        cx.cb = &FxPairFrostShock;
-        SetOnSumCombo(Combo::FrostShock, cx);
-        cx.cb = &FxPairShockFrost;
-        SetOnSumCombo(Combo::ShockFrost, cx);
-
-        // --- TRIPLO ---
-        cx.cb = &FxTriple;
-        SetOnSumCombo(Combo::FireFrostShock, cx);
-
-        spdlog::info("[SMSO] Combos registrados (majority=85%%, tripleMin=28%%).");
+    static void OnComboHUD(RE::Actor* a, Combo which, void* user) {
+        auto* p = static_cast<HudComboParams*>(user);
+        const float sec = p ? p->seconds : 10.0f;
+        const bool rt = p ? p->realTime : true;
+        InjectHUD::BeginCombo(a, which, sec, rt);
     }
+
+    static void OnComboHUDPlusFx(RE::Actor* a, Combo c, void* user) {
+        OnComboHUD(a, c, user);
+
+        switch (c) {
+            case Combo::Fire:
+                FxSoloFire(a, c, nullptr);
+                break;
+            case Combo::Frost:
+                FxSoloFrost(a, c, nullptr);
+                break;
+            case Combo::Shock:
+                FxSoloShock(a, c, nullptr);
+                break;
+
+            case Combo::FireFrost:
+                FxPairFireFrost(a, c, nullptr);
+                break;
+            case Combo::FrostFire:
+                FxPairFrostFire(a, c, nullptr);
+                break;
+            case Combo::FireShock:
+                FxPairFireShock(a, c, nullptr);
+                break;
+            case Combo::ShockFire:
+                FxPairShockFire(a, c, nullptr);
+                break;
+            case Combo::FrostShock:
+                FxPairFrostShock(a, c, nullptr);
+                break;
+            case Combo::ShockFrost:
+                FxPairShockFrost(a, c, nullptr);
+                break;
+
+            case Combo::FireFrostShock:
+                FxTriple(a, c, nullptr);
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+void ElementalEffects::ConfigurarGatilhos() {
+    using ElementalGauges::SetOnSumCombo;
+    using ElementalGauges::SumComboTrigger;
+
+    SumComboTrigger cx{};
+    cx.cb = &OnComboHUDPlusFx;
+    cx.user = &gHUD_All;
+    cx.deferToTask = true;
+    cx.clearAllOnTrigger = true;
+
+    cx.cooldownSeconds = 0.5f;
+    cx.cooldownIsRealTime = true;
+
+    cx.elementLockoutSeconds = 10.0f;
+    cx.elementLockoutIsRealTime = true;
+
+    cx.majorityPct = 0.85f;
+    cx.tripleMinPct = 0.28f;
+
+    for (int i = 0; i < static_cast<int>(Combo::_COUNT); ++i) {
+        SetOnSumCombo(static_cast<Combo>(i), cx);
+    }
+
+    spdlog::info(
+        "[SMSO] Combos registrados p/ HUD+lockout (cooldown=0.5s RT; lockout=10s RT; majority=85%; tripleMin=28%).");
 }

@@ -95,7 +95,7 @@ namespace ElementalGauges {
 }
 
 namespace ElementalGaugesDecay {
-    inline constexpr float kGraceSec = 4.0f;
+    inline constexpr float kGraceSec = 5.0f;
 
     inline constexpr float kRealDecayPerSec = 15.0f;
 
