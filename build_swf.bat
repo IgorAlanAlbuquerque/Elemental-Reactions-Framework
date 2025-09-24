@@ -13,18 +13,15 @@ set "OUT=build"
 set "BASE=%OUT%\smsogauge_base.swf"
 set "OUTSWF=%OUT%\smsogauge.swf"
 set "DIST=Interface\"
-set "MO2=D:\MO2\mods\SMSODestruction_Reactions\Interface"
+set "MO2=D:\MO2\mods\ElementalReactionsFramework\Interface"
 
 if not exist "%OUT%" mkdir "%OUT%"
 del /q "%BASE%" "%OUTSWF%" 2>nul
 
-
 "%SWFMILL%" simple "%XML%" "%BASE%" || goto :err
 
+"%MTASC%" -version 8 -cp "%SRC%" -swf "%BASE%" -frame 1 -main "Register.as" -out "%OUTSWF%" "%SRC%\SMSO_Gauge.as" || goto :err
 
-"%MTASC%" -version 8 -cp "%SRC%" -swf "%BASE%" -out "%OUTSWF%" -main "Register.as" || goto :err
-
-echo OK: "%OUTSWF%"
 if not exist "%DIST%" mkdir "%DIST%"
 copy /Y "%OUTSWF%" "%DIST%\smsogauge.swf" >nul
 

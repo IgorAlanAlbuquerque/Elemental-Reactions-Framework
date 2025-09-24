@@ -1,239 +1,35 @@
-// Flash 8 / AS2
+import flash.display.BitmapData;
+
 class SMSO_Gauge extends MovieClip
 {
-  // ===== Clips do timeline =====
-  var ring_bg_mc:MovieClip;
-  var ring_fire_mc:MovieClip;
-  var ring_frost_mc:MovieClip;
-  var ring_shock_mc:MovieClip;
+  private var gauge_mc:MovieClip = null;        
+  private var ring_bg_mc:MovieClip;
+  private var ring_fire_mc:MovieClip;
+  private var ring_frost_mc:MovieClip;
+  private var ring_shock_mc:MovieClip;
 
-  var icon_fire_mc:MovieClip;               // 0
-  var icon_frost_mc:MovieClip;              // 1
-  var icon_shock_mc:MovieClip;              // 2
-  var icon_fire_frost_mc:MovieClip;         // 3
-  var icon_fire_shock_mc:MovieClip;         // 4
-  var icon_frost_shock_mc:MovieClip;        // 5
-  var icon_fire_frost_shock_mc:MovieClip;   // 6
+  private var icon_container_mc:MovieClip = null; 
 
-  // só para “reservar” topo de depth (não reparentamos ícones)
-  var icons_mc:MovieClip;
+  private var rOut:Number       = 7;
+  private var strokePx:Number   = 2;
+  private var iconPadPx:Number  = 0.5;
+  private var iconNudgeX:Number = 0;
+  private var iconNudgeY:Number = 0;
 
-  // ===== Parâmetros =====
-  var rOut:Number     = 7;
-  var strokePx:Number = 3;
-  var iconPx:Number   = 14;
+  private var _ready:Boolean = false;
+  private var _tried:Boolean = false;
 
-  var _ready:Boolean = false;
-
-  var _iconNames:Array = [
-    "icon_fire_mc",
-    "icon_frost_mc",
-    "icon_shock_mc",
-    "icon_fire_frost_mc",
-    "icon_fire_shock_mc",
-    "icon_frost_shock_mc",
-    "icon_fire_frost_shock_mc"
+  private var _iconBitmapIds:Array = [
+    "icon_fire",
+    "icon_frost",
+    "icon_shock",
+    "icon_fire_frost",
+    "icon_fire_shock",
+    "icon_frost_shock",
+    "icon_fire_frost_shock"
   ];
 
   function SMSO_Gauge() {}
-
-  // ---------- helpers (no nível da classe!) ----------
-  function placeRing(mc:MovieClip, off:Number, depth:Number):Void
-  {
-    if (!mc) return;
-    mc._x = off; mc._y = off;
-    mc.swapDepths(depth);
-  }
-
-  // centraliza pelo bounding box visível (robusto a PNG com padding/registro)
-  function centerOn(mc:MovieClip, cx:Number, cy:Number):Void
-  {
-    var b:Object = mc.getBounds(this);   // bounds em coords do símbolo
-    var mx:Number = (b.xMin + b.xMax) * 0.5;
-    var my:Number = (b.yMin + b.yMax) * 0.5;
-    mc._x += (cx - mx);
-    mc._y += (cy - my);
-  }
-
-  // ---------- ciclo de vida ----------
-  function onLoad():Void
-  {
-    icons_mc = this.createEmptyMovieClip("icons_mc", this.getNextHighestDepth());
-
-    var off:Number = rOut + 2;
-    var cx:Number = off, cy:Number = off;
-
-    // 1) Rings sempre atrás (depths baixos e fixos)
-    var dRing:Number = 1;
-    placeRing(ring_bg_mc,    off, dRing++);  // 1
-    placeRing(ring_fire_mc,  off, dRing++);  // 2
-    placeRing(ring_frost_mc, off, dRing++);  // 3
-    placeRing(ring_shock_mc, off, dRing++);  // 4
-
-    // 2) Ícones: acima dos rings, centralizados
-    var icons:Array = [
-      icon_fire_mc, icon_frost_mc, icon_shock_mc,
-      icon_fire_frost_mc, icon_fire_shock_mc,
-      icon_frost_shock_mc, icon_fire_frost_shock_mc
-    ];
-
-    var dIcon:Number = 100; // bem acima dos rings
-    for (var i:Number=0; i<icons.length; i++) {
-      var mc:MovieClip = icons[i];
-      if (!mc) continue;
-      mc.swapDepths(dIcon++); // garante z-order acima dos rings
-      mc._visible = false;
-      mc._alpha = 100;
-      mc._xscale = mc._yscale = 100;
-      mc.cacheAsBitmap = true;
-      centerOn(mc, cx, cy);
-    }
-
-    clearRings();
-    hideAllIcons();
-
-    _ready =
-      ring_fire_mc  != undefined && ring_frost_mc != undefined && ring_shock_mc != undefined &&
-      icon_fire_mc  != undefined && icon_frost_mc != undefined && icon_shock_mc != undefined &&
-      icon_fire_frost_mc != undefined && icon_fire_shock_mc != undefined &&
-      icon_frost_shock_mc != undefined && icon_fire_frost_shock_mc != undefined;
-  }
-
-  function isReady():Boolean { return _ready; }
-
-  // ===== ÍCONES =====
-  function hideAllIcons():Void
-  {
-    if (icon_fire_mc)              icon_fire_mc._visible = false;
-    if (icon_frost_mc)             icon_frost_mc._visible = false;
-    if (icon_shock_mc)             icon_shock_mc._visible = false;
-    if (icon_fire_frost_mc)        icon_fire_frost_mc._visible = false;
-    if (icon_fire_shock_mc)        icon_fire_shock_mc._visible = false;
-    if (icon_frost_shock_mc)       icon_frost_shock_mc._visible = false;
-    if (icon_fire_frost_shock_mc)  icon_fire_frost_shock_mc._visible = false;
-  }
-
-  // 0..6 (0=Fire, 1=Frost, 2=Shock, 3=Fire+Frost, 4=Fire+Shock, 5=Frost+Shock, 6=Triple)
-  function setIcon(iconId:Number, rgb:Number):Boolean
-  {
-    var idx:Number = (iconId == undefined || isNaN(iconId)) ? -1 : (iconId | 0);
-    if (idx < 0 || idx > 6) { hideAllIcons(); return false; }
-
-    hideAllIcons();
-
-    var nm:String = _iconNames[idx];
-    var mc:MovieClip = this[nm];
-    if (!mc) return false;
-
-    // Subir pro topo
-    mc.swapDepths(this.getNextHighestDepth());
-
-    // Garantir bounds válidos
-    var wasVis:Boolean = mc._visible;
-    if (!wasVis) mc._visible = true;
-
-    // Medir bounds
-    var b:Object = mc.getBounds(this);
-    var w:Number = b.xMax - b.xMin;
-    var h:Number = b.yMax - b.yMin;
-
-    // Escala para caber no anel
-    var target:Number = iconPx;
-    var s:Number = 100 * Math.min(target / w, target / h);
-    mc._xscale = mc._yscale = s;
-
-    // Re-medida após escalar e CENTRALIZAÇÃO AGORA
-    b = mc.getBounds(this);
-    var mx:Number = (b.xMin + b.xMax) * 0.5;
-    var my:Number = (b.yMin + b.yMax) * 0.5;
-    var off:Number = rOut + 2;
-    mc._x += (off - mx);
-    mc._y += (off - my);
-
-    // Visível e tint opcional
-    mc._visible = true;
-    var c:Color = new Color(mc);
-    if (rgb != undefined && !isNaN(rgb)) c.setRGB(rgb);
-    else c.setTransform({ra:100,ga:100,ba:100,aa:100});
-
-    return true;
-  }
-
-  function setComboFill(rem:Number, rgb:Number):Boolean
-  {
-    // clamp e checagens
-    var frac:Number = (isNaN(rem)) ? 0 : Math.max(0, Math.min(1, rem));
-
-    // escolha do "ring" a desenhar (use ring_combo_mc se existir; senão, caia no ring_fire_mc)
-    var ring:MovieClip = this["ring_combo_mc"] ? this["ring_combo_mc"] : ring_fire_mc;
-    if (!ring) return false;
-
-    // fundo discreto
-    if (ring_bg_mc) {
-      ring_bg_mc.clear();
-      drawArc(ring_bg_mc, 0, 1, 0x000000, 30);
-    }
-
-    // se for usar o ring_fire_mc como canal do combo, limpe os outros para não sobrepor
-    if (ring == ring_fire_mc) {
-      if (ring_fire_mc)  ring_fire_mc.clear();
-      if (ring_frost_mc) ring_frost_mc.clear();
-      if (ring_shock_mc) ring_shock_mc.clear();
-    } else {
-      ring.clear(); // combo ring dedicado
-    }
-
-    if (frac <= 0) {
-      this._visible = false;  // esconde o container quando acabar
-      return false;
-    }
-
-    var color:Number = (rgb != undefined && !isNaN(rgb)) ? rgb : 0xFFFFFF;
-    drawArc(ring, 0, frac, color, 100);
-
-    this._visible = true;     // garante visível enquanto tiver combo
-    return true;
-  }
-
-  // ===== ANEL =====
-  function clearRings():Void
-  {
-    if (ring_bg_mc)    ring_bg_mc.clear();
-    if (ring_fire_mc)  ring_fire_mc.clear();
-    if (ring_frost_mc) ring_frost_mc.clear();
-    if (ring_shock_mc) ring_shock_mc.clear();
-
-    drawArc(ring_bg_mc, 0, 1, 0x000000, 30);
-  }
-
-  // desenha frações em sequência; 360° só se soma >= 100
-  function setAccumulators(fire:Number, frost:Number, shock:Number):Boolean
-  {
-    if (ring_fire_mc)  ring_fire_mc.clear();
-    if (ring_frost_mc) ring_frost_mc.clear();
-    if (ring_shock_mc) ring_shock_mc.clear();
-
-    var f:Number = Math.max(0, fire  || 0);
-    var r:Number = Math.max(0, frost || 0);
-    var s:Number = Math.max(0, shock || 0);
-    var rawSum:Number = f + r + s;
-
-    if (rawSum <= 0) { this._visible = false; return false; }
-
-    var totalFrac:Number = Math.min(rawSum / 100.0, 1.0);
-
-    var cur:Number = 0;
-    var fireFrac:Number  = (f > 0) ? totalFrac * (f / rawSum) : 0;
-    var frostFrac:Number = (r > 0) ? totalFrac * (r / rawSum) : 0;
-    var shockFrac:Number = Math.max(0, totalFrac - (fireFrac + frostFrac));
-
-    if (fireFrac  > 0) { drawArc(ring_fire_mc,  cur, cur + fireFrac,  0xFF3A2A, 100); cur += fireFrac;  }
-    if (frostFrac > 0) { drawArc(ring_frost_mc, cur, cur + frostFrac, 0x64C8FF, 100); cur += frostFrac; }
-    if (shockFrac > 0) { drawArc(ring_shock_mc, cur, cur + shockFrac, 0xFFD034, 100); }
-
-    this._visible = true;
-    return true;
-  }
 
   private function drawArc(mc:MovieClip, from:Number, to:Number, color:Number, alpha:Number):Void
   {
@@ -242,19 +38,178 @@ class SMSO_Gauge extends MovieClip
     var t:Number = Math.max(0, Math.min(1, to));
     if (t <= f) return;
 
-    var off:Number = rOut + 2;
     var a0:Number = -Math.PI/2 + f * 2*Math.PI;
     var a1:Number = -Math.PI/2 + t * 2*Math.PI;
 
     mc.lineStyle(strokePx, color, alpha);
 
-    var steps:Number = Math.max(6, Math.round((t - f) * 36));
+    var steps:Number = Math.max(6, Math.round((t - f) * 48)); // mais liso
     var ang:Number = a0;
-    mc.moveTo(off + Math.cos(ang)*rOut, off + Math.sin(ang)*rOut);
+    mc.moveTo(Math.cos(ang)*rOut, Math.sin(ang)*rOut);
 
     for (var i:Number = 1; i <= steps; i++) {
       ang = a0 + (a1 - a0) * (i / steps);
-      mc.lineTo(off + Math.cos(ang)*rOut, off + Math.sin(ang)*rOut);
+      mc.lineTo(Math.cos(ang)*rOut, Math.sin(ang)*rOut);
     }
+  }
+
+  private function drawFilledCircle(mc:MovieClip, cx:Number, cy:Number, r:Number, rgb:Number, alpha:Number):Void {
+    mc.clear();
+    mc.lineStyle(0, 0x000000, 0);
+    mc.beginFill(rgb, alpha);
+    var steps:Number = 64;
+    for (var i:Number = 0; i <= steps; i++) {
+      var a:Number = (i/steps) * Math.PI * 2;
+      var x:Number = cx + Math.cos(a) * r;
+      var y:Number = cy + Math.sin(a) * r;
+      if (i == 0) mc.moveTo(x, y); else mc.lineTo(x, y);
+    }
+    mc.endFill();
+  }
+
+  private function clearRings():Void
+  {
+    if (ring_bg_mc)    ring_bg_mc.clear();
+    if (ring_fire_mc)  ring_fire_mc.clear();
+    if (ring_frost_mc) ring_frost_mc.clear();
+    if (ring_shock_mc) ring_shock_mc.clear();
+  }
+
+  private function hideAllIcons():Void
+  {
+    if (icon_container_mc) {
+      icon_container_mc.removeMovieClip();
+      icon_container_mc = null;
+    }
+  }
+
+  // ================== Ciclo de vida ==================
+  public function onLoad():Void
+  {
+    var off:Number = rOut + 2;
+
+    if (gauge_mc) { gauge_mc.removeMovieClip(); gauge_mc = null; }
+
+    gauge_mc = this.createEmptyMovieClip("gauge_mc", 200);
+    gauge_mc._x = off;
+    gauge_mc._y = off;
+
+    var halo_mc:MovieClip  = gauge_mc.createEmptyMovieClip("halo_mc",   0);
+    ring_bg_mc             = gauge_mc.createEmptyMovieClip("ring_bg_mc",   10);
+    ring_fire_mc           = gauge_mc.createEmptyMovieClip("ring_fire_mc", 20);
+    ring_frost_mc          = gauge_mc.createEmptyMovieClip("ring_frost_mc",30);
+    ring_shock_mc          = gauge_mc.createEmptyMovieClip("ring_shock_mc",40);
+
+    var haloMargin:Number = 2;
+    var haloR:Number = rOut + (strokePx * 0.5) + haloMargin;
+    drawFilledCircle(halo_mc, 0, 0, haloR, 0x000000, 100);
+
+    clearRings();
+    hideAllIcons();
+
+    _ready = (ring_bg_mc    != undefined)
+      && (ring_fire_mc  != undefined)
+      && (ring_frost_mc != undefined)
+      && (ring_shock_mc != undefined);
+    _tried = true;
+  }
+
+  private function tryInit():Void
+  {
+    if (_tried) return;
+    _tried = true;
+    onLoad();
+  }
+
+  public function isReady():Boolean
+  {
+    if (!_ready) tryInit();
+    return _ready;
+  }
+
+  // ================== API ==================
+  public function setIcon(iconId:Number, tintRGB:Number, scaleMul:Number):Boolean
+  {
+    var idx:Number = (isNaN(iconId)) ? -1 : (iconId | 0);
+    if (idx < 0 || idx >= _iconBitmapIds.length) { hideAllIcons(); return false; }
+
+    hideAllIcons();
+
+    var d:Number = this.getNextHighestDepth();
+    var container:MovieClip = gauge_mc.createEmptyMovieClip("icon_container_mc", 100);
+    icon_container_mc = container;
+
+    var bmpId:String = _iconBitmapIds[idx];
+    var bd:BitmapData = BitmapData.loadBitmap(bmpId);
+    if (!bd) return false;
+
+    var holder:MovieClip = container.createEmptyMovieClip("icon_holder_mc", container.getNextHighestDepth());
+    holder.cacheAsBitmap = true;
+    holder.attachBitmap(bd, 1, "always", true);
+
+    var targetPx:Number = Math.max(2, (rOut - (strokePx * 0.5) - iconPadPx) * 2);
+    var baseScale:Number = (targetPx / Math.max(bd.width, bd.height)) * 100;
+    var mul:Number = (!isNaN(scaleMul) && scaleMul > 0) ? scaleMul : 1.0;
+    holder._xscale = holder._yscale = baseScale * mul;
+
+    holder._x = -Math.round(holder._width  / 2) + iconNudgeX;
+    holder._y = -Math.round(holder._height / 2) + iconNudgeY;
+
+    if (!isNaN(tintRGB)) {
+      var c:Color = new Color(holder);
+      c.setRGB(tintRGB);
+    }
+
+    container._x = Math.round(container._x);
+    container._y = Math.round(container._y);
+
+    return true;
+  }
+
+  public function setComboFill(rem:Number, rgb:Number):Void
+  {
+    var frac:Number = (isNaN(rem)) ? 0 : Math.max(0, Math.min(1, rem));
+    var ring:MovieClip = this["ring_combo_mc"] ? this["ring_combo_mc"] : ring_fire_mc;
+    if (!ring) return;
+
+    if (ring_bg_mc) {
+      ring_bg_mc.clear();
+      drawArc(ring_bg_mc, 0, 1, 0x000000, 30);
+    }
+
+    clearRings();
+
+    if (frac <= 0) { this._visible = false; return; }
+
+    var color:Number = (rgb != undefined && !isNaN(rgb) && rgb != 0) ? rgb : 0xFFFFFF;
+    drawArc(ring, 0, frac, color, 100);
+
+    this._visible = true;
+  }
+
+  public function setAccumulators(fire:Number, frost:Number, shock:Number):Void
+  {
+    clearRings();
+
+    var f:Number = Math.max(0, fire  || 0);
+    var r:Number = Math.max(0, frost || 0);
+    var s:Number = Math.max(0, shock || 0);
+    var rawSum:Number = f + r + s;
+
+    if (rawSum <= 0) { this._visible = false; return; }
+
+    var totalFrac:Number = Math.min(rawSum / 100.0, 1.0);
+
+    var cur:Number = 0;
+    var fireFrac:Number  = (f > 0) ? totalFrac * (f / rawSum) : 0;
+    var frostFrac:Number = (r > 0) ? totalFrac * (r / rawSum) : 0;
+    var shockFrac:Number = Math.max(0, totalFrac - (fireFrac + frostFrac));
+
+    drawArc(ring_bg_mc, 0, 1, 0x000000, 30);
+    if (fireFrac  > 0) { drawArc(ring_fire_mc,  cur, cur + fireFrac,  0xFF3A2A, 100); cur += fireFrac;  }
+    if (frostFrac > 0) { drawArc(ring_frost_mc, cur, cur + frostFrac, 0x64C8FF, 100); cur += frostFrac; }
+    if (shockFrac > 0) { drawArc(ring_shock_mc, cur, cur + shockFrac, 0xFFD034, 100); }
+
+    this._visible = true;
   }
 }

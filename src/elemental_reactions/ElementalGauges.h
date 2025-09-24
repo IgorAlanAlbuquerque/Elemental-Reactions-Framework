@@ -15,26 +15,26 @@ namespace ElementalGauges {
 
     enum class Combo : std::uint8_t {
         Fire = 0,
-        Frost,
-        Shock,
-        FireFrost,
-        FrostFire,
-        FireShock,
-        ShockFire,
-        FrostShock,
-        ShockFrost,
-        FireFrostShock,
+        Frost = 1,
+        Shock = 2,
+        FireFrost = 3,
+        FrostFire = 4,
+        FireShock = 5,
+        ShockFire = 6,
+        FrostShock = 7,
+        ShockFrost = 8,
+        FireFrostShock = 9,
         _COUNT
     };
 
     enum class HudIcon : std::uint8_t {
-        Fire = 0,       // icon_fire
-        Frost,          // icon_frost
-        Shock,          // icon_shock
-        FireFrost,      // icon_fire_frost
-        FireShock,      // icon_fire_shock
-        FrostShock,     // icon_frost_shock
-        FireFrostShock  // icon_fire_frost_shock
+        Fire = 0,           // icon_fire
+        Frost = 1,          // icon_frost
+        Shock = 2,          // icon_shock
+        FireFrost = 3,      // icon_fire_frost
+        FireShock = 4,      // icon_fire_shock
+        FrostShock = 5,     // icon_frost_shock
+        FireFrostShock = 6  // icon_fire_frost_shock
     };
 
     struct HudIconSel {
@@ -76,6 +76,13 @@ namespace ElementalGauges {
         bool elementLockoutIsRealTime{true};  // true = segundos reais; false = tempo de jogo
     };
 
+    struct ActiveComboHUD {
+        Combo which;  // ← enum do combo (Fire, Frost, ...)
+        double remainingRtS;
+        double durationRtS;
+        bool realTime;  // true, já que usamos RtS
+    };
+
     void SetOnSumCombo(Combo c, const SumComboTrigger& cfg);
 
     std::uint8_t Get(RE::Actor* a, Type t);
@@ -92,6 +99,8 @@ namespace ElementalGauges {
     std::optional<Totals> GetTotalsDecayed(RE::FormID id);
 
     void GarbageCollectDecayed();
+
+    std::optional<ActiveComboHUD> PickActiveComboHUD(RE::FormID id);
 }
 
 namespace ElementalGaugesDecay {

@@ -1,0 +1,7 @@
+Poder criar multiplos icones para o mesmo alvo
+Posicionar o gauge do player acima da barra de vida no canto inferior esquerdo
+Ajustar o movimento do gauge para quando o NPC se move
+Ajustar o movimento do gauge com mover a camera
+Debugar os crashs
+Revisar Cores
+Revisar Icones

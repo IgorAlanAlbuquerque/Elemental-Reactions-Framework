@@ -346,6 +346,26 @@ namespace ElementalGauges {
             auto* actor = a;
             if (!actor || actor->IsDead()) return false;
 
+            const double nowRt = NowRealSeconds();
+            const double lockS = std::max(0.0, double(cfg.elementLockoutSeconds));
+            e.inCombo[ci] = 1;
+
+            if (cfg.elementLockoutIsRealTime)
+                e.comboBlockUntilRtS[ci] = nowRt + lockS;
+            else
+                e.comboBlockUntilH[ci] = nowH + float(lockS / 3600.0);
+
+            // Timers dos ELEMENTOS (o que realmente bloqueia Add()):
+            if (cfg.elementLockoutIsRealTime) {
+                ForEachElementInCombo(which, [&](std::size_t idx) {
+                    e.blockUntilRtS[idx] = std::max(e.blockUntilRtS[idx], nowRt + lockS);
+                });
+            } else {
+                ForEachElementInCombo(which, [&](std::size_t idx) {
+                    e.blockUntilH[idx] = std::max(e.blockUntilH[idx], nowH + float(lockS / 3600.0));
+                });
+            }
+
             if (cfg.clearAllOnTrigger) {
                 e.v = {0, 0, 0};
                 e.lastHitH = {nowH, nowH, nowH};
@@ -358,30 +378,31 @@ namespace ElementalGauges {
 
             if (cfg.cooldownSeconds > 0.f) {
                 if (cfg.cooldownIsRealTime)
-                    e.comboBlockUntilRtS[ci] = NowRealSeconds() + cfg.cooldownSeconds;
+                    e.comboBlockUntilRtS[ci] =
+                        std::max(e.comboBlockUntilRtS[ci], NowRealSeconds() + cfg.cooldownSeconds);
                 else
-                    e.comboBlockUntilH[ci] = nowH + (cfg.cooldownSeconds / 3600.0f);
+                    e.comboBlockUntilH[ci] = std::max(e.comboBlockUntilH[ci], nowH + (cfg.cooldownSeconds / 3600.0f));
             }
             return true;
         }
 
         constexpr std::uint32_t kFire = 0xF04A3A;
         constexpr std::uint32_t kFrost = 0x4FB2FF;
-        constexpr std::uint32_t kShock = 0xB671FF;
+        constexpr std::uint32_t kShock = 0xFFD02A;
         constexpr std::uint32_t kNeutral = 0xFFFFFF;
 
         // Duplas – vermelho/azul/roxo bias
-        constexpr std::uint32_t kFireFrost_RedBias = 0xE04E9B;
-        constexpr std::uint32_t kFrostFire_BlueBias = 0x6A7DFF;
+        constexpr std::uint32_t kFireFrost_RedBias = 0xE65ACF;
+        constexpr std::uint32_t kFrostFire_BlueBias = 0x7A73FF;
 
-        constexpr std::uint32_t kFireShock_RedBias = 0xD955C3;
-        constexpr std::uint32_t kShockFire_VioBias = 0xBF4EEA;
+        constexpr std::uint32_t kFireShock_RedBias = 0xFF8A2A;
+        constexpr std::uint32_t kShockFire_YelBias = 0xF6B22E;
 
-        constexpr std::uint32_t kFrostShock_BlueBias = 0x6F84FF;
-        constexpr std::uint32_t kShockFrost_VioBias = 0x9F7BFF;
+        constexpr std::uint32_t kFrostShock_BlueBias = 0x49C9F0;
+        constexpr std::uint32_t kShockFrost_YelBias = 0xB8E34D;
 
         // Triplo
-        constexpr std::uint32_t kTripleMix = 0xD986FF;
+        constexpr std::uint32_t kTripleMix = 0xFFF0CC;
 
         inline std::uint32_t TintForIndex(ElementalGauges::Combo c) {
             using C = ElementalGauges::Combo;
@@ -401,12 +422,12 @@ namespace ElementalGauges {
                 case C::FireShock:
                     return kFireShock_RedBias;  // dominante = Fire
                 case C::ShockFire:
-                    return kShockFire_VioBias;  // dominante = Shock
+                    return kShockFire_YelBias;  // dominante = Shock
 
                 case C::FrostShock:
                     return kFrostShock_BlueBias;  // dominante = Frost
                 case C::ShockFrost:
-                    return kShockFrost_VioBias;  // dominante = Shock
+                    return kShockFrost_YelBias;  // dominante = Shock
 
                 case C::FireFrostShock:
                     return kTripleMix;
@@ -468,6 +489,12 @@ namespace ElementalGauges {
             auto order = rank3(tot);  // [maior, segundo, menor]
             return makePairDirectional(order[0], order[1]);
         }
+
+        static inline std::uint8_t to_u8_100(float x) {
+            if (x <= 0.f) return 0;
+            if (x >= 100.f) return 100;
+            return static_cast<std::uint8_t>(x + 0.5f);
+        }
     }
 
     // ============================
@@ -510,7 +537,7 @@ namespace ElementalGauges {
         const int adj = Gauges::AdjustByStates(a, t, delta);
 
         // boost de debug
-        int debugBoost = 10;
+        int debugBoost = 25;
 
         // Totais planejados APÓS o delta atual
         std::array<std::uint8_t, 3> afterTot = e.v;
@@ -537,17 +564,33 @@ namespace ElementalGauges {
     void ForEachDecayed(const std::function<void(RE::FormID, const Totals&)>& fn) {
         auto& m = Gauges::state();
         const float nowH = NowHours();
-
+        const double nowRt = NowRealSeconds();
         for (auto it = m.begin(); it != m.end();) {
             auto& e = it->second;
             Gauges::tickAll(e, nowH);
 
-            if ((e.v[0] | e.v[1] | e.v[2]) != 0) {
+            const bool anyVal = (e.v[0] | e.v[1] | e.v[2]) != 0;
+
+            const bool anyElemLock = e.blockUntilH[0] > nowH || e.blockUntilH[1] > nowH || e.blockUntilH[2] > nowH ||
+                                     e.blockUntilRtS[0] > nowRt || e.blockUntilRtS[1] > nowRt ||
+                                     e.blockUntilRtS[2] > nowRt;
+
+            bool anyComboCd = false, anyComboFlag = false;
+            for (size_t ci = 0; ci < kComboCount; ++ci) {
+                anyComboCd |= (e.comboBlockUntilH[ci] > nowH) || (e.comboBlockUntilRtS[ci] > nowRt);
+                anyComboFlag |= (e.inCombo[ci] != 0);
+            }
+
+            if (anyVal) {
                 Totals t{e.v[0], e.v[1], e.v[2]};
                 fn(it->first, t);
                 ++it;
+            } else if (anyElemLock || anyComboCd || anyComboFlag) {
+                Totals t{0, 0, 0};
+                fn(it->first, t);
+                ++it;
             } else {
-                it = m.erase(it);  // GC: remove atores que zeraram
+                it = m.erase(it);  // GC real
             }
         }
     }
@@ -567,11 +610,13 @@ namespace ElementalGauges {
             auto& e = it->second;
             Gauges::tickAll(e, nowH);
 
-            if ((e.v[0] | e.v[1] | e.v[2]) != 0) {
-                return Totals{e.v[0], e.v[1], e.v[2]};
+            const float eps = 1e-4f;
+            const bool anyVal = (std::fabs(e.v[0]) > eps) || (std::fabs(e.v[1]) > eps) || (std::fabs(e.v[2]) > eps);
+
+            if (anyVal) {
+                return Totals{to_u8_100(e.v[0]), to_u8_100(e.v[1]), to_u8_100(e.v[2])};
             } else {
-                m.erase(it);  // GC pontual
-                return std::nullopt;
+                return Totals{};
             }
         }
         return std::nullopt;
@@ -598,10 +643,34 @@ namespace ElementalGauges {
     }
 
     std::optional<HudIconSel> PickHudIconDecayed(RE::FormID id) {
-        if (auto t = GetTotalsDecayed(id)) {
-            return PickHudIcon(*t);
+        auto t = GetTotalsDecayed(id);
+        if (!t) return std::nullopt;
+
+        if (!t->any()) {
+            auto& m = Gauges::state();
+            if (auto it = m.find(id); it != m.end()) {
+                const float nowH = NowHours();
+                const double nowRt = NowRealSeconds();
+                auto& e = it->second;
+
+                const bool anyElemLock = (e.blockUntilH[0] > nowH) || (e.blockUntilH[1] > nowH) ||
+                                         (e.blockUntilH[2] > nowH) || (e.blockUntilRtS[0] > nowRt) ||
+                                         (e.blockUntilRtS[1] > nowRt) || (e.blockUntilRtS[2] > nowRt);
+
+                bool anyComboCd = false, anyComboFlag = false;
+                for (size_t ci = 0; ci < kComboCount; ++ci) {
+                    anyComboCd |= (e.comboBlockUntilH[ci] > nowH) || (e.comboBlockUntilRtS[ci] > nowRt);
+                    anyComboFlag |= (e.inCombo[ci] != 0);
+                }
+
+                if (!anyElemLock && !anyComboCd && !anyComboFlag) {
+                    m.erase(it);
+                }
+            }
+            return std::nullopt;
         }
-        return std::nullopt;
+
+        return PickHudIcon(*t);
     }
 
     // ============================
@@ -655,4 +724,37 @@ namespace ElementalGauges {
     }
 
     void RegisterStore() { Ser::Register({Gauges::kRecordID, Gauges::kVersion, &Save, &Load, &Revert}); }
+
+    std::optional<ActiveComboHUD> PickActiveComboHUD(RE::FormID id) {
+        auto& m = Gauges::state();
+        auto it = m.find(id);
+        if (it == m.end()) return std::nullopt;
+
+        const auto& e = it->second;
+        const double nowRt = NowRealSeconds();
+
+        double bestRem = 0.0;
+        std::size_t bestIdx = SIZE_MAX;
+        for (std::size_t ci = 0; ci < kComboCount; ++ci) {
+            const double endRt = e.comboBlockUntilRtS[ci];
+            if (endRt > nowRt) {
+                const double rem = endRt - nowRt;
+                if (rem > bestRem) {
+                    bestRem = rem;
+                    bestIdx = ci;
+                }
+            }
+        }
+        if (bestIdx == SIZE_MAX) return std::nullopt;
+
+        const auto which = static_cast<Combo>(bestIdx);
+        const auto& cfg = g_onCombo[bestIdx];
+
+        ActiveComboHUD hud;
+        hud.which = which;  // ← só o enum
+        hud.remainingRtS = bestRem;
+        hud.durationRtS = std::max(0.001, double(cfg.elementLockoutSeconds));
+        hud.realTime = true;
+        return hud;
+    }
 }

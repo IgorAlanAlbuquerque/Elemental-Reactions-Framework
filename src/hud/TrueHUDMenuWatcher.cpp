@@ -12,10 +12,7 @@ RE::BSEventNotifyControl TrueHUDMenuWatcher::ProcessEvent(const RE::MenuOpenClos
 
     // Nome do menu no TrueHUD
     if (ev->menuName == "TrueHUD") {
-        if (ev->opening) {
-            spdlog::info("[SMSO] TrueHUD OPEN");
-            InjectHUD::OnTrueHUDOpen();
-        } else {
+        if (!ev->opening) {
             spdlog::info("[SMSO] TrueHUD CLOSE");
             InjectHUD::OnTrueHUDClose();
         }

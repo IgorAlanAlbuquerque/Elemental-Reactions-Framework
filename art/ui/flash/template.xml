@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<movie width="256" height="256" framerate="30" version="8">
+<movie width="256" height="256" framerate="60" version="8">
   <library>
-    <!-- Bitmaps dos ícones -->
     <bitmap id="icon_fire"                 import="../../source/icons/icon_fire.png"/>
     <bitmap id="icon_frost"                import="../../source/icons/icon_frost.png"/>
     <bitmap id="icon_shock"                import="../../source/icons/icon_shock.png"/>
@@ -10,7 +9,6 @@
     <bitmap id="icon_frost_shock"          import="../../source/icons/icon_frost_shock.png"/>
     <bitmap id="icon_fire_frost_shock"     import="../../source/icons/icon_fire_frost_shock.png"/>
 
-    <!-- Clip vazio (canvas p/ desenhar os anéis via AS2) -->
     <clip id="empty">
       <frame>
         <shape>
@@ -20,36 +18,15 @@
       </frame>
     </clip>
 
-    <!-- WRAPPERS: convertem cada bitmap em MovieClip -->
-    <clip id="mc_icon_fire"><frame><place id="icon_fire" depth="1"/></frame></clip>
-    <clip id="mc_icon_frost"><frame><place id="icon_frost" depth="1"/></frame></clip>
-    <clip id="mc_icon_shock"><frame><place id="icon_shock" depth="1"/></frame></clip>
-    <clip id="mc_icon_fire_frost"><frame><place id="icon_fire_frost" depth="1"/></frame></clip>
-    <clip id="mc_icon_fire_shock"><frame><place id="icon_fire_shock" depth="1"/></frame></clip>
-    <clip id="mc_icon_frost_shock"><frame><place id="icon_frost_shock" depth="1"/></frame></clip>
-    <clip id="mc_icon_fire_frost_shock"><frame><place id="icon_fire_frost_shock" depth="1"/></frame></clip>
-    <!-- Símbolo exportado que o TrueHUD instancia -->
     <clip id="SMSO_Gauge" export="SMSO_Gauge">
       <frame>
-        <!-- Canvas para os anéis (vazios; SMSO_Gauge.as desenha neles) -->
         <place id="empty" name="ring_bg_mc"    x="0" y="0"/>
         <place id="empty" name="ring_fire_mc"  x="0" y="0"/>
         <place id="empty" name="ring_frost_mc" x="0" y="0"/>
         <place id="empty" name="ring_shock_mc" x="0" y="0"/>
-
-        <!-- Ícones como MovieClips nomeados -->
-        <place id="mc_icon_fire"              name="icon_fire_mc"              x="0" y="0"/>
-        <place id="mc_icon_frost"             name="icon_frost_mc"             x="0" y="0"/>
-        <place id="mc_icon_shock"             name="icon_shock_mc"             x="0" y="0"/>
-        <place id="mc_icon_fire_frost"        name="icon_fire_frost_mc"        x="0" y="0"/>
-        <place id="mc_icon_fire_shock"        name="icon_fire_shock_mc"        x="0" y="0"/>
-        <place id="mc_icon_frost_shock"       name="icon_frost_shock_mc"       x="0" y="0"/>
-        <place id="mc_icon_fire_frost_shock"  name="icon_fire_frost_shock_mc"  x="0" y="0"/>
-
       </frame>
     </clip>
   </library>
 
-  <!-- Palco vazio (o TrueHUD vai instanciar via código) -->
   <frame/>
 </movie>
