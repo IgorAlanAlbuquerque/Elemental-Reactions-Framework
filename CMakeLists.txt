@@ -25,6 +25,7 @@ add_commonlibsse_plugin(ElementalReactionsFramework
   SOURCES
     src/PCH.cpp
     src/plugin.cpp
+    src/Utils.cpp
     src/elemental_reactions/ElementalStates.cpp
     src/common/PluginSerialization.cpp
     src/elemental_reactions/ElementalGauges.cpp
@@ -41,6 +42,7 @@ target_compile_features(ElementalReactionsFramework PRIVATE cxx_std_23)
 
 target_precompile_headers(ElementalReactionsFramework PRIVATE 
   src/PCH.h
+  src/Utils.h
   src/elemental_reactions/ElementalStates.h
   src/common/PluginSerialization.h
   src/common/Helpers.h

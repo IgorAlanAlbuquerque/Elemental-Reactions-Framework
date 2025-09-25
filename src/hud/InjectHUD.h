@@ -9,78 +9,85 @@
 namespace InjectHUD {
     struct ComboHUD {
         ElementalGauges::Combo which{};
-        double endRtS{};  // quando expira (tempo real)
-        float endH{};     // quando expira (horas de jogo)
-        bool realTime{};  // true = usa endRtS; false = endH
+        double endRtS{};
+        float endH{};
+        bool realTime{};
         float durationS{};
-        int iconId{};          // 0..6
-        std::uint32_t tint{};  // 0xRRGGBB
+        int iconId{};
+        std::uint32_t tint{};
     };
-
-    constexpr auto SMSO_SWF_PATH = "smsogauge.swf";
-    constexpr auto SMSO_SYMBOL_NAME = "SMSO_Gauge";
-    constexpr uint32_t SMSO_WIDGET_TYPE = 'SMSO';
-    extern TRUEHUD_API::IVTrueHUD4* g_trueHUD;
-    extern SKSE::PluginHandle g_pluginHandle;
-
-    extern std::unordered_map<RE::FormID, std::vector<ComboHUD>> combos;
 
     struct Smooth01 {
         double v{0.0};
         bool init{false};
     };
 
+    class SMSOWidget;
+    using WidgetPtr = std::shared_ptr<SMSOWidget>;
+
+    constexpr auto SMSO_SWF_PATH = "smsogauge.swf";
+    constexpr auto SMSO_SYMBOL_NAME = "SMSO_Gauge";
+    constexpr uint32_t SMSO_WIDGET_TYPE = 'SMSO';
+
+    extern std::unordered_map<RE::FormID, std::vector<WidgetPtr>> widgets;
+    extern std::unordered_map<RE::FormID, std::vector<ComboHUD>> combos;
+    extern TRUEHUD_API::IVTrueHUD4* g_trueHUD;
+    extern SKSE::PluginHandle g_pluginHandle;
+
     class SMSOWidget : public TRUEHUD_API::WidgetBase {
     public:
-        SMSOWidget() = default;
-        SMSOWidget(int slot = 0) : _slot(slot) {}
+        explicit SMSOWidget(int slot = 0) : _slot(slot) {}
 
         int _slot{0};
-        float _slotSpacingPx{24};
-
-        bool _hadContent{false};
-        double _lastGaugeRtS{std::numeric_limits<double>::quiet_NaN()};
-
-        void Initialize() override {
-            if (!_view) return;
-
-            RE::GFxValue vis;
-            vis.SetBoolean(false);
-            _object.SetMember("_visible", vis);
-
-            RE::GFxValue alpha;
-            alpha.SetNumber(100.0);
-            _object.SetMember("_alpha", alpha);
-        }
-
-        void Update(float) override {}
-        void Dispose() override {}
-
-        void FollowActorHead(RE::Actor* actor);
-
-        void SetIconAndGauge(uint32_t iconId, uint32_t fire, uint32_t frost, uint32_t shock, uint32_t tintRGB);
-
-        void SetCombo(int iconId, float remaining01, std::uint32_t tintRGB);
+        int _pos = 0;
+        bool _needsSnap = true;
 
         double _lastX{std::numeric_limits<double>::quiet_NaN()};
         double _lastY{std::numeric_limits<double>::quiet_NaN()};
 
-        Smooth01 _fireDisp{}, _frostDisp{}, _shockDisp{};
-        Smooth01 _comboDisp{};
+        bool _hadContent{false};
+        double _lastGaugeRtS{std::numeric_limits<double>::quiet_NaN()};
 
         double _risePerSec = 90.0;
         double _fallPerSec = 600.0;
         double _comboPerSec = 2.5;
+
+        Smooth01 _fireDisp{};
+        Smooth01 _frostDisp{};
+        Smooth01 _shockDisp{};
+        Smooth01 _comboDisp{};
+
+        static constexpr double kSlotSpacingPx = 30.0;
+        static constexpr double kTopOffsetPx = 0.0;
+
+        static constexpr float kPlayerMarginLeftPx = 45.0f;
+        static constexpr float kPlayerMarginBottomPx = 160.0f;
+        static constexpr float kPlayerScale = 1.5f;
+
+        void Initialize() override;
+        void Update(float) override {}
+        void Dispose() override {}
+
+        void FollowActorHead(RE::Actor* actor);
+        void SetIconAndGauge(uint32_t iconId, uint32_t fire, uint32_t frost, uint32_t shock, uint32_t tintRGB);
+        void SetCombo(int iconId, float remaining01, std::uint32_t tintRGB);
+
         void ResetSmoothing() { _lastX = _lastY = std::numeric_limits<double>::quiet_NaN(); }
+        void SetPos(int p) {
+            if (p == _pos) return;
+            _pos = p;
+            _needsSnap = true;
+            ResetSmoothing();
+        }
     };
 
-    extern std::unordered_map<RE::FormID, std::vector<std::shared_ptr<SMSOWidget>>> widgets;
-
-    void BeginCombo(RE::Actor* a, ElementalGauges::Combo which, float seconds, bool realTime);
     void AddFor(RE::Actor* actor);
     void UpdateFor(RE::Actor* actor);
+    void BeginCombo(RE::Actor* a, ElementalGauges::Combo which, float seconds, bool realTime);
     bool RemoveFor(RE::FormID id);
-
     void RemoveAllWidgets();
     void OnTrueHUDClose();
+    void OnUIFrameBegin();
+    inline double NowRtS();
+    std::uint32_t MakeWidgetID(RE::FormID id, int slot);
 }
