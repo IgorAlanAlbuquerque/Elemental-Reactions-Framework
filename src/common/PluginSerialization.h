@@ -22,7 +22,6 @@ namespace Ser {
     void Register(const Handler& h);
 
     void Install(std::uint32_t uniqueID);
-
 }
 
 namespace SerFunctions {

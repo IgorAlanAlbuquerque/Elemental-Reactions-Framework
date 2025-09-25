@@ -4,8 +4,8 @@
 #include <unordered_map>
 #include <utility>
 
-#include "common/Helpers.h"
-#include "common/PluginSerialization.h"
+#include "../common/Helpers.h"
+#include "../common/PluginSerialization.h"
 
 namespace ElementalStates {
     namespace Flags {

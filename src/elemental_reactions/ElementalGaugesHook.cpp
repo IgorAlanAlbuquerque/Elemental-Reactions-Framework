@@ -1,13 +1,19 @@
 #include "ElementalGaugesHook.h"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <shared_mutex>
+#include <thread>
 #include <type_traits>
 #include <unordered_map>
 
+#include "../hud/HUDTick.h"
 #include "ElementalGauges.h"
 #include "RE/P/PeakValueModifierEffect.h"
+
+using namespace std::chrono;
 
 namespace GaugesHook {
     using Elem = ElementalGauges::Type;
@@ -205,7 +211,10 @@ namespace GaugesHook {
                 inc = static_cast<int>(acc);
                 if (inc >= 1) acc -= inc;
             }
-            if (inc > 0) ElementalGauges::Add(target, elem, inc);
+            if (inc > 0) {
+                ElementalGaugesHook::StartHUDTick();
+                ElementalGauges::Add(target, elem, inc);
+            }
         }
         static void Install(const char*) {
             REL::Relocation<std::uintptr_t> vtbl{T::VTABLE[0]};
@@ -230,6 +239,39 @@ namespace GaugesHook {
 }
 
 namespace ElementalGaugesHook {
+    std::atomic_bool ALLOW_HUD_TICK{false};
+    static std::atomic<long long> g_lastHookMs{0};
+    static std::atomic_bool g_monitorRunning{false};
+
+    // inicia um watchdog que para o HUD tick após 15s sem atividade
+    static void EnsureWatchdog() {
+        bool expected = false;
+        if (!g_monitorRunning.compare_exchange_strong(expected, true)) return;
+
+        std::thread([] {
+            const auto timeout = 15s;
+            for (;;) {
+                std::this_thread::sleep_for(1s);
+                const auto last_local = milliseconds(g_lastHookMs.load(std::memory_order_relaxed));
+                const auto now = duration_cast<milliseconds>(steady_clock::now().time_since_epoch());
+                if (now - last_local > timeout) {
+                    HUD::StopHUDTick();
+                    g_monitorRunning.store(false, std::memory_order_release);
+                    break;
+                }
+            }
+        }).detach();
+    }
+
+    void StartHUDTick() {
+        if (!ALLOW_HUD_TICK.load(std::memory_order_acquire)) return;  // gate ainda fechado
+        const auto now = duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+        g_lastHookMs.store(now, std::memory_order_relaxed);
+        HUD::StartHUDTick();
+        EnsureWatchdog();
+    }
+
+    void StopHUDTick() { HUD::StopHUDTick(); }
     void Install() { GaugesHook::InstallAll(); }
     void RegisterAEEventSink() { GaugesHook::RegisterAEEventSinkImpl(); }
 }
