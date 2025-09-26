@@ -22,21 +22,21 @@ namespace InjectHUD {
         bool init{false};
     };
 
-    class SMSOWidget;
-    using WidgetPtr = std::shared_ptr<SMSOWidget>;
+    class ERFWidget;
+    using WidgetPtr = std::shared_ptr<ERFWidget>;
 
-    constexpr auto SMSO_SWF_PATH = "smsogauge.swf";
-    constexpr auto SMSO_SYMBOL_NAME = "SMSO_Gauge";
-    constexpr uint32_t SMSO_WIDGET_TYPE = 'SMSO';
+    constexpr auto ERF_SWF_PATH = "erfgauge.swf";
+    constexpr auto ERF_SYMBOL_NAME = "ERF_Gauge";
+    constexpr uint32_t ERF_WIDGET_TYPE = 'ELRE';
 
     extern std::unordered_map<RE::FormID, std::vector<WidgetPtr>> widgets;
     extern std::unordered_map<RE::FormID, std::vector<ComboHUD>> combos;
     extern TRUEHUD_API::IVTrueHUD4* g_trueHUD;
     extern SKSE::PluginHandle g_pluginHandle;
 
-    class SMSOWidget : public TRUEHUD_API::WidgetBase {
+    class ERFWidget : public TRUEHUD_API::WidgetBase {
     public:
-        explicit SMSOWidget(int slot = 0) : _slot(slot) {}
+        explicit ERFWidget(int slot = 0) : _slot(slot) {}
 
         int _slot{0};
         int _pos = 0;
@@ -69,7 +69,8 @@ namespace InjectHUD {
         void Dispose() override {}
 
         void FollowActorHead(RE::Actor* actor);
-        void SetIconAndGauge(uint32_t iconId, uint32_t fire, uint32_t frost, uint32_t shock, uint32_t tintRGB);
+        void SetIconAndGauge(uint32_t iconId, const std::vector<uint32_t>& values, const std::vector<uint32_t>& colors,
+                             uint32_t tintRGB);
         void SetCombo(int iconId, float remaining01, std::uint32_t tintRGB);
 
         void ResetSmoothing() { _lastX = _lastY = std::numeric_limits<double>::quiet_NaN(); }

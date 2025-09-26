@@ -11,4 +11,5 @@ namespace ElementalGaugesHook {
     void StopHUDTick();
     void Install();
     void RegisterAEEventSink();
+    void InitCarrierRefs();
 }

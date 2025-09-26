@@ -10,7 +10,7 @@
 namespace InjectHUD {
     TRUEHUD_API::IVTrueHUD4* g_trueHUD = nullptr;
     SKSE::PluginHandle g_pluginHandle = static_cast<SKSE::PluginHandle>(-1);
-    std::unordered_map<RE::FormID, std::vector<std::shared_ptr<SMSOWidget>>> widgets{};
+    std::unordered_map<RE::FormID, std::vector<std::shared_ptr<ERFWidget>>> widgets{};
     std::unordered_map<RE::FormID, std::vector<ComboHUD>> combos;
 }
 
@@ -160,7 +160,7 @@ namespace {
     static void RemoveAtSlot(std::vector<WidgetPtr>& v, RE::FormID id, int slot) {
         if (slot < 0 || slot >= (int)v.size() || !v[slot]) return;
         const auto wid = InjectHUD::MakeWidgetID(id, slot);
-        ::InjectHUD::g_trueHUD->RemoveWidget(::InjectHUD::g_pluginHandle, SMSO_WIDGET_TYPE, wid,
+        ::InjectHUD::g_trueHUD->RemoveWidget(::InjectHUD::g_pluginHandle, ERF_WIDGET_TYPE, wid,
                                              TRUEHUD_API::WidgetRemovalMode::Immediate);
         const int removedPos = v[slot]->_pos;
         v[slot].reset();
@@ -192,16 +192,16 @@ namespace {
     }
 
     // ---------------- Player fixed layout ----------------
-    void FollowPlayerFixed(InjectHUD::SMSOWidget& w) {
+    void FollowPlayerFixed(InjectHUD::ERFWidget& w) {
         if (!w._view) {
             spdlog::warn("[InjectHUD] FollowPlayerFixed: _view=null (slot={}, pos={})", w._slot, w._pos);
             return;
         }
 
         RE::GRectF rect = w._view->GetVisibleFrameRect();
-        const double baseX = rect.left + InjectHUD::SMSOWidget::kPlayerMarginLeftPx;
-        const double baseY = rect.bottom - InjectHUD::SMSOWidget::kPlayerMarginBottomPx;
-        const double targetX = baseX + double(w._pos) * InjectHUD::SMSOWidget::kSlotSpacingPx;
+        const double baseX = rect.left + InjectHUD::ERFWidget::kPlayerMarginLeftPx;
+        const double baseY = rect.bottom - InjectHUD::ERFWidget::kPlayerMarginBottomPx;
+        const double targetX = baseX + double(w._pos) * InjectHUD::ERFWidget::kSlotSpacingPx;
         const double targetY = baseY;
 
         if (w._needsSnap || std::isnan(w._lastX) || std::isnan(w._lastY)) {
@@ -218,7 +218,7 @@ namespace {
         // COMMIT ATÔMICO: posição + escala de uma vez
         RE::GFxValue::DisplayInfo di;
         di.SetPosition(static_cast<float>(px), static_cast<float>(py));
-        di.SetScale(100.0f * InjectHUD::SMSOWidget::kPlayerScale, 100.0f * InjectHUD::SMSOWidget::kPlayerScale);
+        di.SetScale(100.0f * InjectHUD::ERFWidget::kPlayerScale, 100.0f * InjectHUD::ERFWidget::kPlayerScale);
         w._object.SetDisplayInfo(di);
 
         // visibilidade
@@ -231,13 +231,13 @@ namespace {
         w._lastY = py;
 
         spdlog::debug("[InjectHUD] FollowPlayerFixed: final ({}, {}) scale={} slot={} pos={}", w._lastX, w._lastY,
-                      InjectHUD::SMSOWidget::kPlayerScale, w._slot, w._pos);
+                      InjectHUD::ERFWidget::kPlayerScale, w._slot, w._pos);
     }
 }
 
-// ====================== SMSOWidget ======================
-void InjectHUD::SMSOWidget::Initialize() {
-    spdlog::info("[InjectHUD] SMSOWidget::Initialize slot={} this={}", _slot, fmt::ptr(this));
+// ====================== ERFWidget ======================
+void InjectHUD::ERFWidget::Initialize() {
+    spdlog::info("[InjectHUD] ERFWidget::Initialize slot={} this={}", _slot, fmt::ptr(this));
     if (!_view) {
         spdlog::warn("[InjectHUD] Initialize: _view=null slot={}", _slot);
         return;
@@ -254,7 +254,7 @@ void InjectHUD::SMSOWidget::Initialize() {
     _lastGaugeRtS = std::numeric_limits<double>::quiet_NaN();
 }
 
-void InjectHUD::SMSOWidget::FollowActorHead(RE::Actor* actor) {
+void InjectHUD::ERFWidget::FollowActorHead(RE::Actor* actor) {
     if (!actor || !_view) return;
     if (IsPlayerActor(actor)) {
         FollowPlayerFixed(*this);
@@ -305,10 +305,10 @@ void InjectHUD::SMSOWidget::FollowActorHead(RE::Actor* actor) {
     double py = rect.top + stageH * ny;
 
     // Slots em X (ordem visual) – mantenha como você já faz
-    px += double(_pos) * SMSOWidget::kSlotSpacingPx - 40.0;
+    px += double(_pos) * ERFWidget::kSlotSpacingPx - 40.0;
 
     // (Opcional) remova/zerar kTopOffsetPx: o ajuste agora é em MUNDO, não em tela
-    // py += SMSOWidget::kTopOffsetPx; // => comente/remova para seguir TrueHUD ao pé da letra
+    // py += ERFWidget::kTopOffsetPx; // => comente/remova para seguir TrueHUD ao pé da letra
 
     // Escala por distância (TrueHUD-style: linearizar com near/far)
     float scalePct = 100.f;
@@ -342,95 +342,73 @@ void InjectHUD::SMSOWidget::FollowActorHead(RE::Actor* actor) {
     _lastY = py;
 }
 
-void InjectHUD::SMSOWidget::SetIconAndGauge(uint32_t iconId, uint32_t fire, uint32_t frost, uint32_t shock,
-                                            uint32_t tintRGB) {
+void InjectHUD::ERFWidget::SetIconAndGauge(uint32_t iconId, const std::vector<uint32_t>& values,
+                                           const std::vector<uint32_t>& colors, uint32_t tintRGB) {
     if (!_view) {
-        spdlog::warn("[InjectHUD] SetIconAndGauge: _view=null slot={}", _slot);
+        spdlog::warn("[InjectHUD] SetIconAndGaugeN: _view=null slot={}", _slot);
         return;
     }
 
+    // verifica readiness do AS
     RE::GFxValue ready;
-    if (!_object.Invoke("isReady", &ready, nullptr, 0) || !ready.GetBool()) {
-        spdlog::debug("[InjectHUD] SetIconAndGauge: view not ready slot={}", _slot);
+    if (!_object.Invoke("isReady", &ready, nullptr, 0) || !ready.IsBool() || !ready.GetBool()) {
+        spdlog::debug("[InjectHUD] SetIconAndGaugeN: view not ready slot={}", _slot);
         return;
     }
 
-    spdlog::info("[InjectHUD] SetIconAndGauge slot={} pos={} icon={} F/I/S={}/{}/{} tint={:#X}", _slot, _pos, iconId,
-                 fire, frost, shock, tintRGB);
-    bool ok = true;
-    // ícone
+    if (values.size() != colors.size()) {
+        spdlog::warn("[InjectHUD] SetIconAndGaugeN: size mismatch v={} c={}", values.size(), colors.size());
+        return;
+    }
+
+    // 1) ícone
     {
         RE::GFxValue args[3], ret;
-        args[0].SetNumber(iconId);
-        args[1].SetNumber(tintRGB);
-        args[2].SetNumber(1);
-        ok &= _object.Invoke("setIcon", &ret, args, 3);
-        spdlog::info("[InjectHUD] setIcon ok={} retBool?={}", ok, ret.IsBool() ? ret.GetBool() : -1);
+        args[0].SetNumber(static_cast<double>(iconId));
+        args[1].SetNumber(static_cast<double>(tintRGB));
+        args[2].SetNumber(1.0);  // forceVisible
+        const bool ok = _object.Invoke("setIcon", &ret, args, 3);
+        spdlog::info("[InjectHUD] setIcon slot={} icon={} tint={:#X} ok={} retBool?={}", _slot, iconId, tintRGB, ok,
+                     ret.IsBool() ? ret.GetBool() : -1);
     }
 
-    // smoothing de gauges
-    const bool any = (fire + frost + shock) > 0;
-    double now = NowRtS();
-    double dt = 1.0 / 60.0;
-    if (!std::isnan(_lastGaugeRtS)) dt = std::clamp(now - _lastGaugeRtS, 1.0 / 240.0, 0.1);
-    _lastGaugeRtS = now;
+    // 2) empacota arrays para o AS
+    RE::GFxValue valsArr, colsArr;
+    _view->CreateArray(&valsArr);
+    _view->CreateArray(&colsArr);
 
-    auto smoothRiseOnly = [&](double& cur, double tgt) {
-        if (tgt <= cur) {
-            cur = tgt;
-            return;
-        }
-        const double maxStep = _risePerSec * dt;
-        const double d = tgt - cur;
-        cur += (d <= maxStep) ? d : maxStep;
-        cur = std::clamp(cur, 0.0, 100.0);
-    };
+    bool any = false;
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        const double v = std::clamp<double>(values[i], 0.0, 100.0);
+        any = any || (v > 0.0);
 
-    auto seed = _hadContent ? double(fire) : 0.0;
-    if (!_fireDisp.init) {
-        _fireDisp.v = seed;
-        _fireDisp.init = true;
-    }
-    seed = _hadContent ? double(frost) : 0.0;
-    if (!_frostDisp.init) {
-        _frostDisp.v = seed;
-        _frostDisp.init = true;
-    }
-    seed = _hadContent ? double(shock) : 0.0;
-    if (!_shockDisp.init) {
-        _shockDisp.v = seed;
-        _shockDisp.init = true;
+        RE::GFxValue vv, cc;
+        vv.SetNumber(v);
+        cc.SetNumber(static_cast<double>(colors[i]));
+
+        valsArr.PushBack(vv);
+        colsArr.PushBack(cc);
     }
 
-    smoothRiseOnly(_fireDisp.v, double(fire));
-    smoothRiseOnly(_frostDisp.v, double(frost));
-    smoothRiseOnly(_shockDisp.v, double(shock));
+    {
+        RE::GFxValue args[2];
+        args[0] = valsArr;
+        args[1] = colsArr;
+        const bool ok = _object.Invoke("setAccumulators", nullptr, args, 2);
+        spdlog::info("[InjectHUD] setAccumulatorsN slot={} count={} ok={}", _slot, values.size(), ok);
+    }
 
-    RE::GFxValue acc[3];
-    acc[0].SetNumber(_fireDisp.v);
-    acc[1].SetNumber(_frostDisp.v);
-    acc[2].SetNumber(_shockDisp.v);
-    bool okAcc = _object.Invoke("setAccumulators", nullptr, acc, 3);
-    spdlog::debug("[InjectHUD] setAccumulators ok={} F={} I={} S={}", okAcc, _fireDisp.v, _frostDisp.v, _shockDisp.v);
-
+    // 3) visibilidade
     RE::GFxValue vis;
     vis.SetBoolean(any);
-    ok &= _object.SetMember("_visible", vis);
-    spdlog::info("[InjectHUD] _visible(true) ok={}", ok);
+    const bool okVis = _object.SetMember("_visible", vis);
+    spdlog::info("[InjectHUD] _visible({}) ok={}", any, okVis);
 
-    spdlog::debug("[InjectHUD] setAccumulators slot={} F={} I={} S={} visible={}", _slot, _fireDisp.v, _frostDisp.v,
-                  _shockDisp.v, any);
-
-    if (!any) {
-        _fireDisp.v = _frostDisp.v = _shockDisp.v = 0.0;
-        _fireDisp.init = _frostDisp.init = _shockDisp.init = true;
-        _hadContent = false;
-        return;
-    }
-    _hadContent = true;
+    // Nota: smoothing agora fica por conta do AS (rise-only); podemos zerar estados locais
+    _hadContent = any;
 }
 
-void InjectHUD::SMSOWidget::SetCombo(int iconId, float remaining01, std::uint32_t tintRGB) {
+void InjectHUD::ERFWidget::SetCombo(int iconId, float remaining01, std::uint32_t tintRGB) {
     if (!_view) {
         spdlog::warn("[InjectHUD] SetCombo: _view=null slot={}", _slot);
         return;
@@ -495,10 +473,10 @@ void InjectHUD::AddFor(RE::Actor* actor) {
     }
 
     // cria slot físico 0
-    auto w0 = std::make_shared<SMSOWidget>(0);
+    auto w0 = std::make_shared<ERFWidget>(0);
     const auto wid0 = MakeWidgetID(id, 0);
     spdlog::info("[InjectHUD] AddFor id={:08X} -> AddWidget slot0 wid={:08X}", id, wid0);
-    g_trueHUD->AddWidget(g_pluginHandle, SMSO_WIDGET_TYPE, wid0, SMSO_SYMBOL_NAME, w0);
+    g_trueHUD->AddWidget(g_pluginHandle, ERF_WIDGET_TYPE, wid0, ERF_SYMBOL_NAME, w0);
     w0->ProcessDelegates();  // aquece view
     if (!w0->_view) {
         spdlog::error("[InjectHUD] AddFor id={:08X} slot0 view=null após ProcessDelegates()", id);
@@ -529,15 +507,13 @@ void InjectHUD::UpdateFor(RE::Actor* actor) {
     // Combos ativos
     const auto actives = GetActiveCombos(id);
 
-    // Totais (acumulador)
-    bool haveTotals = false;
-    ElementalGauges::Totals totals{};
-    if (auto totalsOpt = ElementalGauges::GetTotalsDecayed(id)) {
-        totals = *totalsOpt;
-        haveTotals = (totals.fire + totals.frost + totals.shock) > 0;
-    }
+    // --- NOVO: bundle do acumulador (N elementos) ---
+    auto bundleOpt = ElementalGauges::PickHudIconDecayed(id);
+    const bool haveTotals =
+        bundleOpt.has_value() && !bundleOpt->values.empty() &&
+        std::any_of(bundleOpt->values.begin(), bundleOpt->values.end(), [](std::uint32_t v) { return v > 0; });
 
-    int needed = (int)actives.size() + (haveTotals ? 1 : 0);
+    int needed = static_cast<int>(actives.size()) + (haveTotals ? 1 : 0);
     needed = std::clamp(needed, 0, 3);
 
     spdlog::info("[InjectHUD] UpdateFor id={:08X} actives={} haveTotals={} needed={} listSize={}", id, actives.size(),
@@ -573,9 +549,9 @@ void InjectHUD::UpdateFor(RE::Actor* actor) {
         }
         if (slot >= (int)list.size()) list.resize(slot + 1);
 
-        auto w = std::make_shared<SMSOWidget>(slot);
+        auto w = std::make_shared<ERFWidget>(slot);
         const auto wid = MakeWidgetID(id, slot);
-        g_trueHUD->AddWidget(g_pluginHandle, SMSO_WIDGET_TYPE, wid, SMSO_SYMBOL_NAME, w);
+        g_trueHUD->AddWidget(g_pluginHandle, ERF_WIDGET_TYPE, wid, ERF_SYMBOL_NAME, w);
         w->ProcessDelegates();
         if (!w->_view) spdlog::error("[InjectHUD] slot{} view=null after ProcessDelegates()", slot);
 
@@ -585,7 +561,7 @@ void InjectHUD::UpdateFor(RE::Actor* actor) {
         spdlog::info("[InjectHUD] AddWidget slot{}: actor {:08X} pos={}", slot, id, list[slot]->_pos);
     }
 
-    // --- Encolher: remove slots vivos até bater 'needed'; preferir maior índice vivo ---
+    // --- Encolher: remove slots vivos até bater 'needed' ---
     while (CountAlive(list) > needed) {
         int victim = -1;
         for (int s = (int)list.size() - 1; s >= 0; --s) {
@@ -597,18 +573,17 @@ void InjectHUD::UpdateFor(RE::Actor* actor) {
         RemoveAtSlot(list, id, victim);
     }
 
-    // --- Pintura: por SLOT, nunca desreferencie nullptr ---
-    // Estratégia: usar um 'used[3]' para não haver disputa entre combo/acumulador.
+    // --- Pintura: por SLOT ---
     std::array<bool, 3> used{};
     used.fill(false);
 
-    // Primeiro pinte combos nos menores slots livres/não-nulos, em ordem crescente de slot
+    // 1) Pintar combos primeiro
     int paintedCombos = 0;
     for (int s = 0; s < (int)list.size() && paintedCombos < (int)actives.size(); ++s) {
         if (!list[s] || !list[s]->_view) continue;
 
         auto& w = *list[s];
-        w.SetPos(paintedCombos);  // ordem visual = 0,1 para combos
+        w.SetPos(paintedCombos);  // ordem visual 0,1 para combos
         w.FollowActorHead(actor);
 
         const auto& c = actives[paintedCombos];
@@ -620,9 +595,9 @@ void InjectHUD::UpdateFor(RE::Actor* actor) {
         ++paintedCombos;
     }
 
-    // Depois pinte o acumulador no primeiro slot não usado disponível
+    // 2) Pintar acumulador (N elementos) no primeiro slot livre
     if (haveTotals) {
-        int accumPos = paintedCombos;  // após os combos
+        int accumPos = paintedCombos;
         bool done = false;
         for (int s = 0; s < (int)list.size(); ++s) {
             if (!list[s] || !list[s]->_view || used[s]) continue;
@@ -631,24 +606,16 @@ void InjectHUD::UpdateFor(RE::Actor* actor) {
             w.SetPos(accumPos);
             w.FollowActorHead(actor);
 
-            if (auto iconOpt = ElementalGauges::PickHudIconDecayed(id)) {
-                const auto& icon = *iconOpt;
-                spdlog::info("[InjectHUD] PaintAccum id={:08X} slot{} pos={} icon={} F/I/S={}/{}/{}", id, s, w._pos,
-                             icon.id, totals.fire, totals.frost, totals.shock);
-                w.SetIconAndGauge(icon.id, totals.fire, totals.frost, totals.shock, icon.tintRGB);
-            } else {
-                RE::GFxValue vis;
-                vis.SetBoolean(false);
-                w._object.SetMember("_visible", vis);
-            }
+            // usa o bundle calculado lá em cima (1 chamada só)
+            const auto& b = *bundleOpt;
+            spdlog::info("[InjectHUD] PaintAccum id={:08X} slot{} pos={} nVals={}", id, s, w._pos, b.values.size());
+            w.SetIconAndGauge(b.iconId, b.values, b.colors, b.iconTint);
+
             used[s] = true;
             done = true;
             break;
         }
-
-        if (!done) {
-            spdlog::debug("[InjectHUD] No free slot to paint accumulator (all used?)");
-        }
+        if (!done) spdlog::debug("[InjectHUD] No free slot to paint accumulator (all used?)");
     }
 }
 
@@ -681,7 +648,7 @@ bool InjectHUD::RemoveFor(RE::FormID id) {
     for (int slot = 0; slot < (int)it->second.size(); ++slot) {
         if (!it->second[slot]) continue;
         const auto wid = MakeWidgetID(id, slot);
-        g_trueHUD->RemoveWidget(g_pluginHandle, SMSO_WIDGET_TYPE, wid, TRUEHUD_API::WidgetRemovalMode::Immediate);
+        g_trueHUD->RemoveWidget(g_pluginHandle, ERF_WIDGET_TYPE, wid, TRUEHUD_API::WidgetRemovalMode::Immediate);
     }
     widgets.erase(it);
     combos.erase(id);
@@ -699,7 +666,7 @@ void InjectHUD::RemoveAllWidgets() {
         for (int slot = 0; slot < (int)vec.size(); ++slot) {
             if (!vec[slot]) continue;
             const auto wid = MakeWidgetID(id, slot);
-            g_trueHUD->RemoveWidget(g_pluginHandle, SMSO_WIDGET_TYPE, wid, TRUEHUD_API::WidgetRemovalMode::Immediate);
+            g_trueHUD->RemoveWidget(g_pluginHandle, ERF_WIDGET_TYPE, wid, TRUEHUD_API::WidgetRemovalMode::Immediate);
         }
     }
     widgets.clear();

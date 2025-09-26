@@ -10,8 +10,8 @@ rem === Pastas/arquivos do projeto ===
 set "XML=art\ui\flash\template.xml"
 set "SRC=art\ui\flash\src"
 set "OUT=build"
-set "BASE=%OUT%\smsogauge_base.swf"
-set "OUTSWF=%OUT%\smsogauge.swf"
+set "BASE=%OUT%\erfgauge_base.swf"
+set "OUTSWF=%OUT%\erfgauge.swf"
 set "DIST=Interface\"
 set "MO2=D:\MO2\mods\ElementalReactionsFramework\Interface"
 
@@ -20,14 +20,14 @@ del /q "%BASE%" "%OUTSWF%" 2>nul
 
 "%SWFMILL%" simple "%XML%" "%BASE%" || goto :err
 
-"%MTASC%" -version 8 -cp "%SRC%" -swf "%BASE%" -frame 1 -main "Register.as" -out "%OUTSWF%" "%SRC%\SMSO_Gauge.as" || goto :err
+"%MTASC%" -version 8 -cp "%SRC%" -swf "%BASE%" -frame 1 -main "Register.as" -out "%OUTSWF%" "%SRC%\ERF_Gauge.as" || goto :err
 
 if not exist "%DIST%" mkdir "%DIST%"
-copy /Y "%OUTSWF%" "%DIST%\smsogauge.swf" >nul
+copy /Y "%OUTSWF%" "%DIST%\erfgauge.swf" >nul
 
 if exist "D:\MO2\mods" (
   if not exist "%MO2%" mkdir "%MO2%"
-  copy /Y "%OUTSWF%" "%MO2%\smsogauge.swf" >nul
+  copy /Y "%OUTSWF%" "%MO2%\erfgauge.swf" >nul
 )
 
 popd
