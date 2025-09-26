@@ -8,11 +8,9 @@
 
 #include "RE/Skyrim.h"
 #include "SKSE/SKSE.h"
+#include "erf_element.h"
 
 namespace ElementalGauges {
-
-    enum class Type : std::uint8_t { Fire = 0, Frost = 1, Shock = 2 };
-
     enum class Combo : std::uint8_t {
         Fire = 0,
         Frost = 1,
@@ -28,88 +26,76 @@ namespace ElementalGauges {
     };
 
     enum class HudIcon : std::uint8_t {
-        Fire = 0,           // icon_fire
-        Frost = 1,          // icon_frost
-        Shock = 2,          // icon_shock
-        FireFrost = 3,      // icon_fire_frost
-        FireShock = 4,      // icon_fire_shock
-        FrostShock = 5,     // icon_frost_shock
-        FireFrostShock = 6  // icon_fire_frost_shock
+        Fire = 0,
+        Frost = 1,
+        Shock = 2,
+        FireFrost = 3,
+        FireShock = 4,
+        FrostShock = 5,
+        FireFrostShock = 6
     };
 
-    struct HudIconSel {
-        int id;                 // cast de HudIcon
-        std::uint32_t tintRGB;  // 0xRRGGBB (par direcional: cor do elemento dominante)
-        Combo combo;            // qual combinação lógica foi escolhida
+    struct HudGaugeBundle {
+        int iconId{0};
+        std::uint32_t iconTint{0};
+        std::vector<std::uint32_t> values;
+        std::vector<std::uint32_t> colors;
     };
 
     struct Totals {
-        std::uint8_t fire{};
-        std::uint8_t frost{};
-        std::uint8_t shock{};
-        bool any() const { return fire | frost | shock; }
-        std::uint8_t sum() const { return std::uint8_t(int(fire) + int(frost) + int(shock)); }
+        std::vector<std::uint8_t> values;
+        bool any() const {
+            for (auto v : values)
+                if (v > 0) return true;
+            return false;
+        }
+        std::uint32_t sum() const {
+            std::uint32_t s = 0;
+            for (auto v : values) s += v;
+            return s;
+        }
     };
-
-    std::optional<HudIconSel> PickHudIcon(const Totals& t);
-
-    // Conveniência: aplica decay/GC e já devolve o ícone para um ator
-    std::optional<HudIconSel> PickHudIconDecayed(RE::FormID id);
 
     struct SumComboTrigger {
         using Callback = void (*)(RE::Actor* actor, Combo which, void* user);
         Callback cb{nullptr};
         void* user{nullptr};
-
-        // Regras
         float majorityPct{0.85f};
         float tripleMinPct{0.28f};
-
-        // Execução / antispam
         float cooldownSeconds{0.5f};
         bool cooldownIsRealTime{true};
         bool deferToTask{true};
         bool clearAllOnTrigger{true};
-
-        // NOVO: lockout para ACUMULAR GAUGE dos elementos envolvidos no combo
-        float elementLockoutSeconds{0.0f};    // 0 = sem lockout de acumulo
-        bool elementLockoutIsRealTime{true};  // true = segundos reais; false = tempo de jogo
+        float elementLockoutSeconds{0.0f};
+        bool elementLockoutIsRealTime{true};
     };
 
     struct ActiveComboHUD {
-        Combo which;  // ← enum do combo (Fire, Frost, ...)
+        Combo which;
         double remainingRtS;
         double durationRtS;
-        bool realTime;  // true, já que usamos RtS
+        bool realTime;
     };
 
     void SetOnSumCombo(Combo c, const SumComboTrigger& cfg);
-
-    std::uint8_t Get(RE::Actor* a, Type t);
-    void Set(RE::Actor* a, Type t, std::uint8_t value);
-    void Add(RE::Actor* a, Type t, int delta);
+    std::uint8_t Get(RE::Actor* a, ERF_ElementHandle elem);
+    void Set(RE::Actor* a, ERF_ElementHandle elem, std::uint8_t value);
+    void Add(RE::Actor* a, ERF_ElementHandle elem, int delta);
     void Clear(RE::Actor* a);
-
     void RegisterStore();
-
     void ForEachDecayed(const std::function<void(RE::FormID, const Totals&)>& fn);
-
     std::vector<std::pair<RE::FormID, Totals>> SnapshotDecayed();
-
     std::optional<Totals> GetTotalsDecayed(RE::FormID id);
-
     void GarbageCollectDecayed();
-
     std::optional<ActiveComboHUD> PickActiveComboHUD(RE::FormID id);
+    std::optional<HudGaugeBundle> PickHudIconDecayed(RE::FormID id);
 }
 
 namespace ElementalGaugesDecay {
     inline constexpr float kGraceSec = 5.0f;
-
     inline constexpr float kRealDecayPerSec = 15.0f;
 
     inline float NowHours() { return RE::Calendar::GetSingleton()->GetHoursPassed(); }
-
     inline float Timescale() {
         float ts = 20.0f;
         if (auto* gs = RE::GameSettingCollection::GetSingleton()) {
@@ -120,8 +106,6 @@ namespace ElementalGaugesDecay {
         if (ts < 0.001f) ts = 0.001f;
         return ts;
     }
-
     inline float DecayPerGameHour() { return kRealDecayPerSec * 3600.0f / Timescale(); }
-
     inline float GraceGameHours() { return (kGraceSec * Timescale()) / 3600.0f; }
 }

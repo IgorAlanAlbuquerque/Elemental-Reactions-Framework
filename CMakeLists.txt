@@ -34,6 +34,7 @@ add_commonlibsse_plugin(ElementalReactionsFramework
     src/hud/HUDTick.cpp
     src/hud/InjectHUD.cpp
     src/hud/TrueHUDMenuWatcher.cpp
+    src/elemental_reactions/erf_element.cpp
 )
 
 target_include_directories(ElementalReactionsFramework PRIVATE ${truehud_SOURCE_DIR}/src)
@@ -52,6 +53,7 @@ target_precompile_headers(ElementalReactionsFramework PRIVATE
   src/hud/HUDTick.h
   src/hud/InjectHUD.h
   src/hud/TrueHUDMenuWatcher.h
+  src/elemental_reactions/erf_element.h
 )
 
 if(DEFINED OUTPUT_FOLDER)

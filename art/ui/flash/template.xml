@@ -18,7 +18,7 @@
       </frame>
     </clip>
 
-    <clip id="SMSO_Gauge" export="SMSO_Gauge">
+    <clip id="ERF_Gauge" export="ERF_Gauge">
       <frame>
         <place id="empty" name="ring_bg_mc"    x="0" y="0"/>
         <place id="empty" name="ring_fire_mc"  x="0" y="0"/>

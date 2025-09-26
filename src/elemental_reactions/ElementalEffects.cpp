@@ -15,36 +15,36 @@ namespace {
     static HudComboParams gHUD_All{10.0f, true};
 
     static void FxSoloFire(RE::Actor* a, Combo, void*) {
-        if (a) spdlog::info("[SMSO] SOLO Fire");
+        if (a) spdlog::info("[ERF] SOLO Fire");
     }
     static void FxSoloFrost(RE::Actor* a, Combo, void*) {
-        if (a) spdlog::info("[SMSO] SOLO Frost");
+        if (a) spdlog::info("[ERF] SOLO Frost");
     }
     static void FxSoloShock(RE::Actor* a, Combo, void*) {
-        if (a) spdlog::info("[SMSO] SOLO Shock");
+        if (a) spdlog::info("[ERF] SOLO Shock");
     }
 
     static void FxPairFireFrost(RE::Actor* a, Combo, void*) {
-        if (a) spdlog::info("[SMSO] Pair FireFrost");
+        if (a) spdlog::info("[ERF] Pair FireFrost");
     }
     static void FxPairFrostFire(RE::Actor* a, Combo, void*) {
-        if (a) spdlog::info("[SMSO] Pair FrostFire");
+        if (a) spdlog::info("[ERF] Pair FrostFire");
     }
     static void FxPairFireShock(RE::Actor* a, Combo, void*) {
-        if (a) spdlog::info("[SMSO] Pair FireShock");
+        if (a) spdlog::info("[ERF] Pair FireShock");
     }
     static void FxPairShockFire(RE::Actor* a, Combo, void*) {
-        if (a) spdlog::info("[SMSO] Pair ShockFire");
+        if (a) spdlog::info("[ERF] Pair ShockFire");
     }
     static void FxPairFrostShock(RE::Actor* a, Combo, void*) {
-        if (a) spdlog::info("[SMSO] Pair FrostShock");
+        if (a) spdlog::info("[ERF] Pair FrostShock");
     }
     static void FxPairShockFrost(RE::Actor* a, Combo, void*) {
-        if (a) spdlog::info("[SMSO] Pair ShockFrost");
+        if (a) spdlog::info("[ERF] Pair ShockFrost");
     }
 
     static void FxTriple(RE::Actor* a, Combo, void*) {
-        if (a) spdlog::info("[SMSO] TRIPLE Fire+Frost+Shock");
+        if (a) spdlog::info("[ERF] TRIPLE Fire+Frost+Shock");
     }
 
     static void OnComboHUD(RE::Actor* a, Combo which, void* user) {
@@ -120,5 +120,5 @@ void ElementalEffects::ConfigurarGatilhos() {
     }
 
     spdlog::info(
-        "[SMSO] Combos registrados p/ HUD+lockout (cooldown=0.5s RT; lockout=10s RT; majority=85%; tripleMin=28%).");
+        "[ERF] Combos registrados p/ HUD+lockout (cooldown=0.5s RT; lockout=10s RT; majority=85%; tripleMin=28%).");
 }

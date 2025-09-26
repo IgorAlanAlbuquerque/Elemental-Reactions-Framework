@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cmath>
 #include <shared_mutex>
+#include <span>
 #include <thread>
 #include <type_traits>
 #include <unordered_map>
@@ -12,47 +13,86 @@
 #include "../hud/HUDTick.h"
 #include "ElementalGauges.h"
 #include "RE/P/PeakValueModifierEffect.h"
+#include "erf_element.h"
 
 using namespace std::chrono;
 
 namespace GaugesHook {
-    using Elem = ElementalGauges::Type;
+    using Elem = ERF_ElementHandle;
 
-    struct Cfg {
-        float pctFire = 0.10f;
-        float pctFrost = 0.10f;
-        float pctShock = 0.10f;
-    };
-    static Cfg& cfg() {
-        static Cfg c;  // NOSONAR
-        return c;
-    }
+    static RE::BGSKeyword* g_kwGaugeAcc = nullptr;
+    static RE::EffectSetting* g_mgefGaugeAcc = nullptr;
+
+    static std::unordered_map<std::uint64_t, double> g_lastAccHint;
+    static std::shared_mutex g_accHintMx;
 
     // -------- helpers --------
+    static std::uint64_t KeyActorOnly(const RE::Actor* a) { return static_cast<std::uint64_t>(a ? a->GetFormID() : 0); }
+
+    static RE::BGSKeyword* LookupKW(const char* edid, std::uint32_t formID = 0) {
+        if (auto* k = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(edid)) return k;
+        if (formID) return RE::TESForm::LookupByID<RE::BGSKeyword>(formID);
+        return nullptr;
+    }
+    static RE::EffectSetting* LookupMGEF(const char* edid, std::uint32_t formID = 0) {
+        if (auto* m = RE::TESForm::LookupByEditorID<RE::EffectSetting>(edid)) return m;
+        if (formID) return RE::TESForm::LookupByID<RE::EffectSetting>(formID);
+        return nullptr;
+    }
+
+    static bool IsGaugeAccCarrier(const RE::EffectSetting* mgef) {
+        if (!mgef) return false;
+
+        // Match direto por ponteiro (se bateu por LookupForm)
+        if (g_mgefGaugeAcc && mgef == g_mgefGaugeAcc) {
+            spdlog::info("[Hook] IsCarrier: matched by MGEF pointer {:p}", static_cast<const void*>(mgef));
+            return true;
+        }
+
+        // Match por keyword (comparar FormID, não ponteiro!)
+        if (g_kwGaugeAcc) {
+            const auto kwIDWant = g_kwGaugeAcc->GetFormID();
+            std::size_t i = 0;
+            for (auto* kw : mgef->GetKeywords()) {
+                const auto id = kw ? kw->GetFormID() : 0u;
+                spdlog::info("[Hook]  KW[{}]={:p} id={:08X} want={:08X}", i++, static_cast<void*>(kw), id, kwIDWant);
+                if (kw && id == kwIDWant) {
+                    spdlog::info("[Hook] IsCarrier: matched by Keyword FormID");
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     static RE::Actor* AsActor(RE::MagicTarget* mt) {
         if (!mt) return nullptr;
         if (auto a = skyrim_cast<RE::Actor*>(mt)) return a;
         return nullptr;
     }
-    static float GetHealth(RE::Actor* a) {
-        if (!a) return 0.0f;
-        if (auto avo = skyrim_cast<RE::ActorValueOwner*>(a)) return avo->GetActorValue(RE::ActorValue::kHealth);
-        return 0.0f;
-    }
+
     static std::optional<Elem> ClassifyElement(const RE::EffectSetting* mgef) {
         if (!mgef) return std::nullopt;
-        using enum ElementalGauges::Type;
-        using enum RE::ActorValue;
-        switch (mgef->data.resistVariable) {
-            case kResistFire:
-                return Fire;
-            case kResistFrost:
-                return Frost;
-            case kResistShock:
-                return Shock;
-            default:
-                return std::nullopt;
+        if (IsGaugeAccCarrier(mgef)) {
+            spdlog::info("[Hook] Classify: skip (carrier)");
+            return std::nullopt;
         }
+
+        const auto edid = mgef->GetFormEditorID();
+        spdlog::info("[Hook] Classify: mgef={:p} edid={}", static_cast<const void*>(mgef), edid ? edid : "(null)");
+
+        const auto kws = mgef->GetKeywords();
+        std::size_t i = 0;
+        for (RE::BGSKeyword* kw : kws) {
+            spdlog::info("[Hook]  scan KW[{}]={:p}", i++, static_cast<void*>(kw));
+            if (!kw) continue;
+            if (auto h = ElementRegistry::get().findByKeyword(kw)) {
+                spdlog::info("[Hook]  matched element handle={} by keyword", *h);
+                return *h;
+            }
+        }
+        spdlog::info("[Hook]  no keyword matched");
+        return std::nullopt;
     }
 
     // -------- contexto por ActiveEffect --------
@@ -68,7 +108,9 @@ namespace GaugesHook {
     static std::unordered_map<std::uint64_t, double> g_accum;  // NOSONAR
     static std::shared_mutex g_accumMx;                        // NOSONAR
     static std::uint64_t MakeKey(const RE::Actor* a, Elem e) {
-        return (static_cast<std::uint64_t>(a->GetFormID()) << 8) | static_cast<std::uint64_t>(std::to_underlying(e));
+        const std::uint64_t hi = static_cast<std::uint64_t>(a ? a->GetFormID() : 0);
+        const std::uint64_t lo = static_cast<std::uint64_t>(e);
+        return (hi << 32) | lo;
     }
 
     // -------- EVENTO: limpeza (remove ctx por UID e limpa acumulador do alvo) --------
@@ -100,10 +142,11 @@ namespace GaugesHook {
                     });
                 }
                 if (tgt) {
-                    const auto base = static_cast<std::uint64_t>(tgt->GetFormID()) << 8;
-                    std::unique_lock lk(g_accumMx);
-                    for (auto it = g_accum.begin(); it != g_accum.end();)
-                        it = ((it->first >> 8) == (base >> 8)) ? g_accum.erase(it) : std::next(it);
+                    const auto key = KeyActorOnly(tgt);
+                    {
+                        std::unique_lock lk(g_accHintMx);
+                        g_lastAccHint.erase(key);  // << limpa o hint ao remover efeitos
+                    }
                 }
             }
             return RE::BSEventNotifyControl::kContinue;
@@ -111,8 +154,12 @@ namespace GaugesHook {
     };
 
     inline void RegisterAEEventSinkImpl() {
-        if (auto* src = RE::ScriptEventSourceHolder::GetSingleton())
+        if (auto* src = RE::ScriptEventSourceHolder::GetSingleton()) {
             src->AddEventSink<RE::TESActiveEffectApplyRemoveEvent>(AEApplyRemoveSink::GetSingleton());
+            spdlog::info("[Hook] AEApplyRemoveSink registered.");
+        } else {
+            spdlog::warn("[Hook] ScriptEventSourceHolder::GetSingleton() == null");
+        }
     }
 
     // -------- HOOKS --------
@@ -122,16 +169,83 @@ namespace GaugesHook {
         using Fn = void(T*, RE::MagicTarget*);
         static inline Fn* _orig{};
 
+        static bool IsInstantaneous(const RE::EffectSetting* mgef, const T* self) {
+            const bool noDurationFlag =
+                (mgef && (mgef->data.flags.any(RE::EffectSetting::EffectSettingData::Flag::kNoDuration)));
+            const bool zeroDur = (self && self->duration <= 0.01f);
+            return noDurationFlag || zeroDur;
+        }
+
         static void thunk(T* self, RE::MagicTarget* mt) {
+            spdlog::info("[Hook] Start<{}> self={:p}", typeid(T).name(), static_cast<void*>(self));
             _orig(self, mt);
-            const auto* mgef = self->GetBaseObject();
-            RE::Actor* actor = AsActor(self->target);
+
+            // --- pegue os objetos com tipos corretos ---
+            const RE::EffectSetting* mgef = self ? self->GetBaseObject() : nullptr;
+
+            const RE::MagicItem* mi = self ? self->spell : nullptr;            // pode ser Spell/Scroll/Ench
+            const RE::SpellItem* sp = mi ? mi->As<RE::SpellItem>() : nullptr;  // downcast seguro (pode ser nullptr)
+
+            const char* miEdid = mi ? mi->GetFormEditorID() : nullptr;
+            const char* spEdid = sp ? sp->GetFormEditorID() : nullptr;
+            const char* mgEdid = mgef ? mgef->GetFormEditorID() : nullptr;
+
+            spdlog::info("[Hook] AE magicItem id={:08X} edid={}", mi ? mi->GetFormID() : 0, miEdid ? miEdid : "(null)");
+            spdlog::info("[Hook] AE spellItem id={:08X} edid={}", sp ? sp->GetFormID() : 0, spEdid ? spEdid : "(null)");
+            spdlog::info("[Hook] AE mgef      id={:08X} edid={}", mgef ? mgef->GetFormID() : 0,
+                         mgEdid ? mgEdid : "(null)");
+
+            RE::Actor* actor = AsActor(self ? self->target : nullptr);
+            spdlog::info("[Hook]  targetActor={:p}", static_cast<void*>(actor));
             if (!mgef || !actor) return;
+
+            // carrier?
+            if (IsGaugeAccCarrier(mgef)) {
+                double acc = static_cast<double>(self->magnitude);
+                if (acc <= 0.001 && self->effect) {
+                    acc = static_cast<double>(self->effect->effectItem.magnitude);  // << EFIT da SPEL
+                }
+                if (acc <= 0.001) acc = 1.0;  // fallback só pra teste
+                {
+                    std::unique_lock lk(g_accHintMx);
+                    g_lastAccHint[KeyActorOnly(actor)] = acc;
+                }
+                spdlog::info("[Hook]  Carrier Start -> hint[target={:08X}] = {:.3f}", actor->GetFormID(), acc);
+                return;
+            }
+
+            // dano
             if (auto elem = ClassifyElement(mgef)) {
-                std::unique_lock lk(g_ctxMx);
-                g_ctx[self] = EffCtx{actor->CreateRefHandle(), *elem, self->usUniqueID};
+                {
+                    std::unique_lock lk(g_ctxMx);
+                    g_ctx[self] = EffCtx{actor->CreateRefHandle(), *elem, self->usUniqueID};
+                }
+                spdlog::info("[Hook]  classified elem={} uid={}", (int)*elem, self->usUniqueID);
+
+                if (IsInstantaneous(mgef, self)) {
+                    // double acc = (double)self->magnitude;  // REMOVA
+                    double acc = 0.0;
+                    {
+                        std::shared_lock lk(g_accHintMx);
+                        auto it = g_lastAccHint.find(KeyActorOnly(actor));
+                        if (it != g_lastAccHint.end()) acc = it->second;
+                    }
+                    if (acc <= 0.001) {
+                        spdlog::info("[Hook]  Instant -> no carrier hint; skip");
+                    } else {
+                        const int inc = std::max(1, (int)std::lround(acc));
+                        spdlog::info("[Hook]  Instant -> +{} (acc={:.3f})", inc, acc);
+                        ElementalGaugesHook::StartHUDTick();
+                        ElementalGauges::Add(actor, *elem, inc);
+                    }
+                } else {
+                    spdlog::info("[Hook]  Non-instant -> defer to Update");
+                }
+            } else {
+                spdlog::info("[Hook]  not elemental, ignoring");
             }
         }
+
         static void Install(const char*) {
             REL::Relocation<std::uintptr_t> vtbl{T::VTABLE[0]};
             const auto old = vtbl.write_vfunc(kIndex, &thunk);
@@ -146,9 +260,26 @@ namespace GaugesHook {
         static inline Fn* _orig{};
 
         static void thunk(T* self, float dt) {
+            spdlog::info("[Hook] Update<{}> self={:p} dt={:.4f}", typeid(T).name(), static_cast<void*>(self), dt);
+
+            const auto* mgef = self->GetBaseObject();
+            const char* edid = mgef ? mgef->GetFormEditorID() : "(null)";
+            const RE::MagicItem* mi = self ? self->spell : nullptr;
+            const RE::SpellItem* sp = mi ? mi->As<RE::SpellItem>() : nullptr;
+            spdlog::info("[Hook] Update<{}> dt={:.4f} spell={:08X}({}) mgef={:08X}({})", typeid(T).name(), dt,
+                         sp ? sp->GetFormID() : 0, (sp && sp->GetFormEditorID()) ? sp->GetFormEditorID() : "(null)",
+                         mgef ? mgef->GetFormID() : 0,
+                         (mgef && mgef->GetFormEditorID()) ? mgef->GetFormEditorID() : "(null)");
+            if (mgef && IsGaugeAccCarrier(mgef)) {
+                spdlog::info("[Hook]  Update is carrier (edid={}), skip", edid ? edid : "(null)");
+                _orig(self, dt);
+                return;
+            }
+
             RE::Actor* target = nullptr;
             Elem elem{};
             bool haveCtx = false;
+
             {
                 std::shared_lock lk(g_ctxMx);
                 if (auto it = g_ctx.find(self); it != g_ctx.end()) {
@@ -159,7 +290,6 @@ namespace GaugesHook {
             }
 
             if (!haveCtx) {
-                const auto* mgef = self->GetBaseObject();
                 RE::Actor* actor = AsActor(self->target);
                 if (mgef && actor) {
                     if (auto e = ClassifyElement(mgef)) {
@@ -170,52 +300,50 @@ namespace GaugesHook {
                         target = actor;
                         elem = *e;
                         haveCtx = true;
+                        spdlog::info("[Hook]  late-classified elem={} uid={}", (int)elem, self->usUniqueID);
                     }
                 }
             }
+
             if (!haveCtx || !target) {
+                spdlog::info("[Hook]  no ctx/target -> call orig");
                 _orig(self, dt);
                 return;
             }
 
-            const float hpBefore = GetHealth(target);
-            _orig(self, dt);
-            const float hpAfter = GetHealth(target);
-            const float dmg = hpBefore - hpAfter;
-            if (dmg <= 0.0f) return;
-
-            float pct = 0.0f;
-            using enum ElementalGauges::Type;
-            switch (elem) {
-                case Fire:
-                    pct = cfg().pctFire;
-                    break;
-                case Frost:
-                    pct = cfg().pctFrost;
-                    break;
-                case Shock:
-                    pct = cfg().pctShock;
-                    break;
-                default:
-                    break;
-            }
-            if (pct <= 0.0f) return;
-
-            const double add = static_cast<double>(dmg) * static_cast<double>(pct);
-            const auto key = MakeKey(target, elem);
-            int inc = 0;
+            double accPerSec = 0.0;  // NÃO ler self->magnitude
             {
+                std::shared_lock lk(g_accHintMx);
+                auto it = g_lastAccHint.find(KeyActorOnly(target));
+                if (it != g_lastAccHint.end()) accPerSec = it->second;
+            }
+            if (accPerSec <= 0.001) {
+                spdlog::info("[Hook]  accPerSec=0 (no carrier hint), nothing to add (edid={})", edid ? edid : "(null)");
+                _orig(self, dt);
+                return;
+            }
+
+            int inc = 0;
+            if (dt > 0.0f) {
+                const auto key = MakeKey(target, elem);
                 std::unique_lock lk(g_accumMx);
                 double& acc = g_accum[key];
+                const double add = accPerSec * static_cast<double>(dt);
                 acc += add;
-                inc = static_cast<int>(acc);
+                inc = static_cast<int>(std::floor(acc));
                 if (inc >= 1) acc -= inc;
+                spdlog::info("[Hook]  acc+= {:.3f} -> inc={} (acc rem={:.3f})", add, inc, acc);
             }
+
             if (inc > 0) {
                 ElementalGaugesHook::StartHUDTick();
                 ElementalGauges::Add(target, elem, inc);
+                spdlog::info("[Hook]  Add target={:08X} elem={} +{}", target->GetFormID(), (int)elem, inc);
             }
+
+            _orig(self, dt);
         }
+
         static void Install(const char*) {
             REL::Relocation<std::uintptr_t> vtbl{T::VTABLE[0]};
             const auto old = vtbl.write_vfunc(kIndex, &thunk);
@@ -228,6 +356,7 @@ namespace GaugesHook {
     using PVME = RE::PeakValueModifierEffect;
 
     static void InstallAll() {
+        spdlog::info("[Hook] Installing vfunc hooks...");
         StartHook<VME>::Install("ValueModifierEffect");
         UpdateHook<VME>::Install("ValueModifierEffect");
         StartHook<DVME>::Install("DualValueModifierEffect");
@@ -235,15 +364,15 @@ namespace GaugesHook {
         StartHook<PVME>::Install("PeakValueModifierEffect");
         UpdateHook<PVME>::Install("PeakValueModifierEffect");
         StartHook<RE::ActiveEffect>::Install("ActiveEffect");
+        UpdateHook<RE::ActiveEffect>::Install("ActiveEffect");
+        spdlog::info("[Hook] All hooks installed.");
     }
 }
 
-namespace ElementalGaugesHook {
-    std::atomic_bool ALLOW_HUD_TICK{false};
+namespace HookThread {
     static std::atomic<long long> g_lastHookMs{0};
     static std::atomic_bool g_monitorRunning{false};
 
-    // inicia um watchdog que para o HUD tick após 15s sem atividade
     static void EnsureWatchdog() {
         bool expected = false;
         if (!g_monitorRunning.compare_exchange_strong(expected, true)) return;
@@ -262,16 +391,60 @@ namespace ElementalGaugesHook {
             }
         }).detach();
     }
+}
 
-    void StartHUDTick() {
-        if (!ALLOW_HUD_TICK.load(std::memory_order_acquire)) return;  // gate ainda fechado
-        const auto now = duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
-        g_lastHookMs.store(now, std::memory_order_relaxed);
-        HUD::StartHUDTick();
-        EnsureWatchdog();
+std::atomic_bool ElementalGaugesHook::ALLOW_HUD_TICK{false};
+
+void ElementalGaugesHook::StartHUDTick() {
+    if (!ALLOW_HUD_TICK.load(std::memory_order_acquire)) return;
+    const auto now = duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+    HookThread::g_lastHookMs.store(now, std::memory_order_relaxed);
+    HUD::StartHUDTick();
+    HookThread::EnsureWatchdog();
+}
+
+void ElementalGaugesHook::StopHUDTick() { HUD::StopHUDTick(); }
+void ElementalGaugesHook::Install() {
+    spdlog::info("[Hook] Install()");
+    GaugesHook::InstallAll();
+}
+void ElementalGaugesHook::RegisterAEEventSink() {
+    spdlog::info("[Hook] RegisterAEEventSink()");
+    GaugesHook::RegisterAEEventSinkImpl();
+}
+
+void ElementalGaugesHook::InitCarrierRefs() {
+    using namespace GaugesHook;
+
+    // >>>> COLOQUE AQUI O NOME DO SEU PLUGIN <<<<
+    static constexpr const char* kPlugin = "ERF_Keywords.esp";  // ou .esl — exatamente como está no Data
+    // MGEF: FE059800 -> localID = 0x059800
+    constexpr std::uint32_t kMgefLocalID = 0x059800;
+    // Se você sabe o FormID local da KYWD, coloque aqui; se não, buscamos por EditorID
+    constexpr std::uint32_t kKwLocalID = 0x000000;  // 0 => ignora
+
+    auto* dh = RE::TESDataHandler::GetSingleton();
+    if (!dh) {
+        spdlog::error("[Hook] InitCarrierRefs: TESDataHandler == null");
+        // Ainda tentamos por EditorID como fallback
     }
 
-    void StopHUDTick() { HUD::StopHUDTick(); }
-    void Install() { GaugesHook::InstallAll(); }
-    void RegisterAEEventSink() { GaugesHook::RegisterAEEventSinkImpl(); }
+    // 1) Tente por arquivo+FormID (mais robusto em ESL/ESL-flagged)
+    g_mgefGaugeAcc = dh ? dh->LookupForm<RE::EffectSetting>(kMgefLocalID, kPlugin) : nullptr;
+    if (!g_mgefGaugeAcc) {
+        // 2) Fallback por EditorID, se você manteve "ERF_GaugeAccEffect" como EDID
+        g_mgefGaugeAcc = LookupMGEF("ERF_GaugeAccEffect");
+    }
+
+    if (kKwLocalID) {
+        g_kwGaugeAcc = dh ? dh->LookupForm<RE::BGSKeyword>(kKwLocalID, kPlugin) : nullptr;
+    }
+    if (!g_kwGaugeAcc) {
+        // Fallback por EditorID
+        g_kwGaugeAcc = LookupKW("ERF_GaugeAccKW");
+    }
+
+    spdlog::info("[Hook] InitCarrierRefs: plugin='{}' mgef(ptr)={:p} mgefID={:08X} kw(ptr)={:p} kwID={:08X}", kPlugin,
+                 static_cast<void*>(g_mgefGaugeAcc), g_mgefGaugeAcc ? g_mgefGaugeAcc->GetFormID() : 0u,
+                 static_cast<void*>(g_kwGaugeAcc), g_kwGaugeAcc ? g_kwGaugeAcc->GetFormID() : 0u);
 }

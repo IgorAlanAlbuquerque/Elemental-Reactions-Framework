@@ -43,7 +43,7 @@ namespace {
         // 3) Varre todos os alvos com gauges vivos/decay e processa
         spdlog::info("[HUDTick] ForEachDecayed begin");
         ElementalGauges::ForEachDecayed([&](RE::FormID id, const ElementalGauges::Totals& totals) {
-            spdlog::info("[HUDTick] FE id={:08X} totals F/I/S={}/{}/{}", id, totals.fire, totals.frost, totals.shock);
+            spdlog::info("[HUDTick] FE id={:08X} totals N={}", id, totals.values.size());
             alive.insert(id);
 
             RE::Actor* a = RE::TESForm::LookupByID<RE::Actor>(id);
