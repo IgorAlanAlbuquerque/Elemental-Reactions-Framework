@@ -11,6 +11,7 @@
 #include "elemental_reactions/ElementalStates.h"
 #include "elemental_reactions/erf_element.h"
 #include "elemental_reactions/erf_reaction.h"
+#include "elemental_reactions/erf_state.h"
 #include "hud/InjectHUD.h"
 #include "hud/TrueHUDMenuWatcher.h"
 
@@ -197,9 +198,6 @@ namespace {
             d.name = "Fire";
             d.colorRGB = 0xF04A3A;
             d.keyword = byID(kMagicDamageFire);
-            d.stateMultipliers = {{ElementalStates::Flag::Wet, 0.10},
-                                  {ElementalStates::Flag::Fur, 1.30},
-                                  {ElementalStates::Flag::Rubber, 1.30}};
             R.registerElement(d);
         }
         {
@@ -207,9 +205,6 @@ namespace {
             d.name = "Frost";
             d.colorRGB = 0x4FB2FF;
             d.keyword = byID(kMagicDamageFrost);
-            d.stateMultipliers = {{ElementalStates::Flag::Fur, 0.10},
-                                  {ElementalStates::Flag::Wet, 1.30},
-                                  {ElementalStates::Flag::Rubber, 1.30}};
             R.registerElement(d);
         }
         {
@@ -217,11 +212,60 @@ namespace {
             d.name = "Shock";
             d.colorRGB = 0xFFD02A;
             d.keyword = byID(kMagicDamageShock);
-            d.stateMultipliers = {{ElementalStates::Flag::Rubber, 0.10},
-                                  {ElementalStates::Flag::Wet, 1.30},
-                                  {ElementalStates::Flag::Fur, 1.30}};
             R.registerElement(d);
         }
+    }
+
+    static void RegisterDefaultStatesAndMultipliers() {
+        auto& SR = StateRegistry::get();
+
+        ERF_StateHandle wetH{};
+        ERF_StateHandle rubH{};
+        ERF_StateHandle furH{};
+
+        if (auto o = SR.findByName("Wet"))
+            wetH = *o;
+        else
+            wetH = SR.registerState({"Wet", nullptr});
+        if (auto o = SR.findByName("Rubber"))
+            rubH = *o;
+        else
+            rubH = SR.registerState({"Rubber", nullptr});
+        if (auto o = SR.findByName("Fur"))
+            furH = *o;
+        else
+            furH = SR.registerState({"Fur", nullptr});
+
+        spdlog::info("[ERF] States registered: Wet={} Rubber={} Fur={}", wetH, rubH, furH);
+
+        auto f = ElementRegistry::get().findByName("Fire");
+        auto i = ElementRegistry::get().findByName("Frost");
+        auto s = ElementRegistry::get().findByName("Shock");
+        if (!f || !i || !s) {
+            spdlog::error("[ERF] RegisterDefaultStates: elementos ausentes");
+            return;
+        }
+
+        if (auto* ed = ElementRegistry::get().get(*f)) {
+            auto* m = const_cast<ERF_ElementDesc*>(ed);
+            m->setMultiplierForState(wetH, 0.10);
+            m->setMultiplierForState(furH, 1.30);
+            m->setMultiplierForState(rubH, 1.30);
+        }
+        if (auto* ed = ElementRegistry::get().get(*i)) {
+            auto* m = const_cast<ERF_ElementDesc*>(ed);
+            m->setMultiplierForState(furH, 0.10);
+            m->setMultiplierForState(wetH, 1.30);
+            m->setMultiplierForState(rubH, 1.30);
+        }
+        if (auto* ed = ElementRegistry::get().get(*s)) {
+            auto* m = const_cast<ERF_ElementDesc*>(ed);
+            m->setMultiplierForState(rubH, 0.10);
+            m->setMultiplierForState(wetH, 1.30);
+            m->setMultiplierForState(furH, 1.30);
+        }
+
+        spdlog::info("[ERF] State multipliers linked to elements.");
     }
 }
 
@@ -249,6 +293,8 @@ namespace {
                 spdlog::info("[ERF] Elementos vanilla registrados (count={}).", ElementRegistry::get().size());
                 RegisterAllReactions_ERF();
                 spdlog::info("Efeitos elementais registrados.");
+                RegisterDefaultStatesAndMultipliers();
+                spdlog::info("Estados elementais registrados");
                 ElementalGaugesHook::InitCarrierRefs();
                 ElementalGaugesHook::Install();
                 ElementalGaugesHook::RegisterAEEventSink();

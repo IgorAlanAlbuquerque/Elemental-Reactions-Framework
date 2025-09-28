@@ -1,15 +1,22 @@
 #pragma once
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 #include "RE/Skyrim.h"
-#include "SKSE/SKSE.h"
+#include "erf_state.h"
 
 namespace ElementalStates {
-    enum class Flag : std::uint8_t { Wet = 0, Rubber = 1, Fur = 2 };
-
     void RegisterStore();
 
-    void Set(RE::Actor* a, Flag f, bool value);
-    bool Get(RE::Actor* a, Flag f);
+    bool SetActive(RE::Actor* a, ERF_StateHandle sh, bool value);
+    bool IsActive(RE::Actor* a, ERF_StateHandle sh);
+
+    void Activate(RE::Actor* a, ERF_StateHandle sh);
+    void Deactivate(RE::Actor* a, ERF_StateHandle sh);
+
     void Clear(RE::Actor* a);
     void ClearAll();
+
+    std::vector<ERF_StateHandle> GetActive(RE::Actor* a);
 }

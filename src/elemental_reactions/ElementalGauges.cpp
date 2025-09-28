@@ -113,17 +113,20 @@ namespace Gauges {
         if (!a || delta <= 0) return delta;
 
         const ERF_ElementDesc* ed = ElementRegistry::get().get(h);
-        if (!ed) return delta;
+        if (!ed || ed->stateMultipliers.empty()) return delta;
 
         double f = 1.0;
-        for (const auto& [flag, mult] : ed->stateMultipliers) {
-            if (ElementalStates::Get(a, flag)) {
+
+        for (const auto& [sh, mult] : ed->stateMultipliers) {
+            if (sh == 0) continue;
+            if (ElementalStates::IsActive(a, sh)) {
                 f *= mult;
             }
         }
 
         const double out = std::round(static_cast<double>(delta) * f);
-        return static_cast<int>(out < 0.0 ? 0.0 : out);
+        if (out <= 0.0) return 0;
+        return static_cast<int>(out);
     }
 }
 
