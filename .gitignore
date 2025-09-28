@@ -11,3 +11,6 @@ cmake-build*
 *.bsa
 
 .VSCodeCounter/*
+
+Data/*
+Interface/*

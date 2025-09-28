@@ -43,21 +43,16 @@ namespace GaugesHook {
     static bool IsGaugeAccCarrier(const RE::EffectSetting* mgef) {
         if (!mgef) return false;
 
-        // Match direto por ponteiro (se bateu por LookupForm)
         if (g_mgefGaugeAcc && mgef == g_mgefGaugeAcc) {
-            spdlog::info("[Hook] IsCarrier: matched by MGEF pointer {:p}", static_cast<const void*>(mgef));
             return true;
         }
 
-        // Match por keyword (comparar FormID, não ponteiro!)
         if (g_kwGaugeAcc) {
             const auto kwIDWant = g_kwGaugeAcc->GetFormID();
             std::size_t i = 0;
             for (auto* kw : mgef->GetKeywords()) {
                 const auto id = kw ? kw->GetFormID() : 0u;
-                spdlog::info("[Hook]  KW[{}]={:p} id={:08X} want={:08X}", i++, static_cast<void*>(kw), id, kwIDWant);
                 if (kw && id == kwIDWant) {
-                    spdlog::info("[Hook] IsCarrier: matched by Keyword FormID");
                     return true;
                 }
             }
@@ -74,24 +69,17 @@ namespace GaugesHook {
     static std::optional<Elem> ClassifyElement(const RE::EffectSetting* mgef) {
         if (!mgef) return std::nullopt;
         if (IsGaugeAccCarrier(mgef)) {
-            spdlog::info("[Hook] Classify: skip (carrier)");
             return std::nullopt;
         }
-
-        const auto edid = mgef->GetFormEditorID();
-        spdlog::info("[Hook] Classify: mgef={:p} edid={}", static_cast<const void*>(mgef), edid ? edid : "(null)");
 
         const auto kws = mgef->GetKeywords();
         std::size_t i = 0;
         for (RE::BGSKeyword* kw : kws) {
-            spdlog::info("[Hook]  scan KW[{}]={:p}", i++, static_cast<void*>(kw));
             if (!kw) continue;
             if (auto h = ElementRegistry::get().findByKeyword(kw)) {
-                spdlog::info("[Hook]  matched element handle={} by keyword", *h);
                 return *h;
             }
         }
-        spdlog::info("[Hook]  no keyword matched");
         return std::nullopt;
     }
 
@@ -157,8 +145,6 @@ namespace GaugesHook {
         if (auto* src = RE::ScriptEventSourceHolder::GetSingleton()) {
             src->AddEventSink<RE::TESActiveEffectApplyRemoveEvent>(AEApplyRemoveSink::GetSingleton());
             spdlog::info("[Hook] AEApplyRemoveSink registered.");
-        } else {
-            spdlog::warn("[Hook] ScriptEventSourceHolder::GetSingleton() == null");
         }
     }
 
@@ -177,72 +163,46 @@ namespace GaugesHook {
         }
 
         static void thunk(T* self, RE::MagicTarget* mt) {
-            spdlog::info("[Hook] Start<{}> self={:p}", typeid(T).name(), static_cast<void*>(self));
             _orig(self, mt);
 
             // --- pegue os objetos com tipos corretos ---
             const RE::EffectSetting* mgef = self ? self->GetBaseObject() : nullptr;
 
-            const RE::MagicItem* mi = self ? self->spell : nullptr;            // pode ser Spell/Scroll/Ench
-            const RE::SpellItem* sp = mi ? mi->As<RE::SpellItem>() : nullptr;  // downcast seguro (pode ser nullptr)
-
-            const char* miEdid = mi ? mi->GetFormEditorID() : nullptr;
-            const char* spEdid = sp ? sp->GetFormEditorID() : nullptr;
-            const char* mgEdid = mgef ? mgef->GetFormEditorID() : nullptr;
-
-            spdlog::info("[Hook] AE magicItem id={:08X} edid={}", mi ? mi->GetFormID() : 0, miEdid ? miEdid : "(null)");
-            spdlog::info("[Hook] AE spellItem id={:08X} edid={}", sp ? sp->GetFormID() : 0, spEdid ? spEdid : "(null)");
-            spdlog::info("[Hook] AE mgef      id={:08X} edid={}", mgef ? mgef->GetFormID() : 0,
-                         mgEdid ? mgEdid : "(null)");
-
             RE::Actor* actor = AsActor(self ? self->target : nullptr);
-            spdlog::info("[Hook]  targetActor={:p}", static_cast<void*>(actor));
             if (!mgef || !actor) return;
 
-            // carrier?
             if (IsGaugeAccCarrier(mgef)) {
                 double acc = static_cast<double>(self->magnitude);
                 if (acc <= 0.001 && self->effect) {
-                    acc = static_cast<double>(self->effect->effectItem.magnitude);  // << EFIT da SPEL
+                    acc = static_cast<double>(self->effect->effectItem.magnitude);
                 }
-                if (acc <= 0.001) acc = 1.0;  // fallback só pra teste
+                if (acc <= 0.001) acc = 1.0;
                 {
                     std::unique_lock lk(g_accHintMx);
                     g_lastAccHint[KeyActorOnly(actor)] = acc;
                 }
-                spdlog::info("[Hook]  Carrier Start -> hint[target={:08X}] = {:.3f}", actor->GetFormID(), acc);
                 return;
             }
 
-            // dano
             if (auto elem = ClassifyElement(mgef)) {
                 {
                     std::unique_lock lk(g_ctxMx);
                     g_ctx[self] = EffCtx{actor->CreateRefHandle(), *elem, self->usUniqueID};
                 }
-                spdlog::info("[Hook]  classified elem={} uid={}", (int)*elem, self->usUniqueID);
 
                 if (IsInstantaneous(mgef, self)) {
-                    // double acc = (double)self->magnitude;  // REMOVA
                     double acc = 0.0;
                     {
                         std::shared_lock lk(g_accHintMx);
                         auto it = g_lastAccHint.find(KeyActorOnly(actor));
                         if (it != g_lastAccHint.end()) acc = it->second;
                     }
-                    if (acc <= 0.001) {
-                        spdlog::info("[Hook]  Instant -> no carrier hint; skip");
-                    } else {
+                    if (acc > 0.001) {
                         const int inc = std::max(1, (int)std::lround(acc));
-                        spdlog::info("[Hook]  Instant -> +{} (acc={:.3f})", inc, acc);
                         ElementalGaugesHook::StartHUDTick();
                         ElementalGauges::Add(actor, *elem, inc);
                     }
-                } else {
-                    spdlog::info("[Hook]  Non-instant -> defer to Update");
                 }
-            } else {
-                spdlog::info("[Hook]  not elemental, ignoring");
             }
         }
 
@@ -260,18 +220,8 @@ namespace GaugesHook {
         static inline Fn* _orig{};
 
         static void thunk(T* self, float dt) {
-            spdlog::info("[Hook] Update<{}> self={:p} dt={:.4f}", typeid(T).name(), static_cast<void*>(self), dt);
-
             const auto* mgef = self->GetBaseObject();
-            const char* edid = mgef ? mgef->GetFormEditorID() : "(null)";
-            const RE::MagicItem* mi = self ? self->spell : nullptr;
-            const RE::SpellItem* sp = mi ? mi->As<RE::SpellItem>() : nullptr;
-            spdlog::info("[Hook] Update<{}> dt={:.4f} spell={:08X}({}) mgef={:08X}({})", typeid(T).name(), dt,
-                         sp ? sp->GetFormID() : 0, (sp && sp->GetFormEditorID()) ? sp->GetFormEditorID() : "(null)",
-                         mgef ? mgef->GetFormID() : 0,
-                         (mgef && mgef->GetFormEditorID()) ? mgef->GetFormEditorID() : "(null)");
             if (mgef && IsGaugeAccCarrier(mgef)) {
-                spdlog::info("[Hook]  Update is carrier (edid={}), skip", edid ? edid : "(null)");
                 _orig(self, dt);
                 return;
             }
@@ -300,25 +250,22 @@ namespace GaugesHook {
                         target = actor;
                         elem = *e;
                         haveCtx = true;
-                        spdlog::info("[Hook]  late-classified elem={} uid={}", (int)elem, self->usUniqueID);
                     }
                 }
             }
 
             if (!haveCtx || !target) {
-                spdlog::info("[Hook]  no ctx/target -> call orig");
                 _orig(self, dt);
                 return;
             }
 
-            double accPerSec = 0.0;  // NÃO ler self->magnitude
+            double accPerSec = 0.0;
             {
                 std::shared_lock lk(g_accHintMx);
                 auto it = g_lastAccHint.find(KeyActorOnly(target));
                 if (it != g_lastAccHint.end()) accPerSec = it->second;
             }
             if (accPerSec <= 0.001) {
-                spdlog::info("[Hook]  accPerSec=0 (no carrier hint), nothing to add (edid={})", edid ? edid : "(null)");
                 _orig(self, dt);
                 return;
             }
@@ -332,13 +279,11 @@ namespace GaugesHook {
                 acc += add;
                 inc = static_cast<int>(std::floor(acc));
                 if (inc >= 1) acc -= inc;
-                spdlog::info("[Hook]  acc+= {:.3f} -> inc={} (acc rem={:.3f})", add, inc, acc);
             }
 
             if (inc > 0) {
                 ElementalGaugesHook::StartHUDTick();
                 ElementalGauges::Add(target, elem, inc);
-                spdlog::info("[Hook]  Add target={:08X} elem={} +{}", target->GetFormID(), (int)elem, inc);
             }
 
             _orig(self, dt);
@@ -415,24 +360,14 @@ void ElementalGaugesHook::RegisterAEEventSink() {
 
 void ElementalGaugesHook::InitCarrierRefs() {
     using namespace GaugesHook;
-
-    // >>>> COLOQUE AQUI O NOME DO SEU PLUGIN <<<<
-    static constexpr const char* kPlugin = "ERF_Keywords.esp";  // ou .esl — exatamente como está no Data
-    // MGEF: FE059800 -> localID = 0x059800
+    static constexpr const char* kPlugin = "ERF_Keywords.esp";
     constexpr std::uint32_t kMgefLocalID = 0x059800;
-    // Se você sabe o FormID local da KYWD, coloque aqui; se não, buscamos por EditorID
-    constexpr std::uint32_t kKwLocalID = 0x000000;  // 0 => ignora
+    constexpr std::uint32_t kKwLocalID = 0x000000;
 
     auto* dh = RE::TESDataHandler::GetSingleton();
-    if (!dh) {
-        spdlog::error("[Hook] InitCarrierRefs: TESDataHandler == null");
-        // Ainda tentamos por EditorID como fallback
-    }
 
-    // 1) Tente por arquivo+FormID (mais robusto em ESL/ESL-flagged)
     g_mgefGaugeAcc = dh ? dh->LookupForm<RE::EffectSetting>(kMgefLocalID, kPlugin) : nullptr;
     if (!g_mgefGaugeAcc) {
-        // 2) Fallback por EditorID, se você manteve "ERF_GaugeAccEffect" como EDID
         g_mgefGaugeAcc = LookupMGEF("ERF_GaugeAccEffect");
     }
 
@@ -440,11 +375,6 @@ void ElementalGaugesHook::InitCarrierRefs() {
         g_kwGaugeAcc = dh ? dh->LookupForm<RE::BGSKeyword>(kKwLocalID, kPlugin) : nullptr;
     }
     if (!g_kwGaugeAcc) {
-        // Fallback por EditorID
         g_kwGaugeAcc = LookupKW("ERF_GaugeAccKW");
     }
-
-    spdlog::info("[Hook] InitCarrierRefs: plugin='{}' mgef(ptr)={:p} mgefID={:08X} kw(ptr)={:p} kwID={:08X}", kPlugin,
-                 static_cast<void*>(g_mgefGaugeAcc), g_mgefGaugeAcc ? g_mgefGaugeAcc->GetFormID() : 0u,
-                 static_cast<void*>(g_kwGaugeAcc), g_kwGaugeAcc ? g_kwGaugeAcc->GetFormID() : 0u);
 }

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -11,33 +12,10 @@
 #include "erf_element.h"
 
 namespace ElementalGauges {
-    enum class Combo : std::uint8_t {
-        Fire = 0,
-        Frost = 1,
-        Shock = 2,
-        FireFrost = 3,
-        FrostFire = 4,
-        FireShock = 5,
-        ShockFire = 6,
-        FrostShock = 7,
-        ShockFrost = 8,
-        FireFrostShock = 9,
-        _COUNT
-    };
-
-    enum class HudIcon : std::uint8_t {
-        Fire = 0,
-        Frost = 1,
-        Shock = 2,
-        FireFrost = 3,
-        FireShock = 4,
-        FrostShock = 5,
-        FireFrostShock = 6
-    };
-
     struct HudGaugeBundle {
-        int iconId{0};
-        std::uint32_t iconTint{0};
+        std::string iconPath;
+        std::uint32_t iconTint{0xFFFFFF};
+
         std::vector<std::uint32_t> values;
         std::vector<std::uint32_t> colors;
     };
@@ -56,38 +34,12 @@ namespace ElementalGauges {
         }
     };
 
-    struct SumComboTrigger {
-        using Callback = void (*)(RE::Actor* actor, Combo which, void* user);
-        Callback cb{nullptr};
-        void* user{nullptr};
-        float majorityPct{0.85f};
-        float tripleMinPct{0.28f};
-        float cooldownSeconds{0.5f};
-        bool cooldownIsRealTime{true};
-        bool deferToTask{true};
-        bool clearAllOnTrigger{true};
-        float elementLockoutSeconds{0.0f};
-        bool elementLockoutIsRealTime{true};
-    };
-
-    struct ActiveComboHUD {
-        Combo which;
-        double remainingRtS;
-        double durationRtS;
-        bool realTime;
-    };
-
-    void SetOnSumCombo(Combo c, const SumComboTrigger& cfg);
     std::uint8_t Get(RE::Actor* a, ERF_ElementHandle elem);
     void Set(RE::Actor* a, ERF_ElementHandle elem, std::uint8_t value);
     void Add(RE::Actor* a, ERF_ElementHandle elem, int delta);
     void Clear(RE::Actor* a);
     void RegisterStore();
     void ForEachDecayed(const std::function<void(RE::FormID, const Totals&)>& fn);
-    std::vector<std::pair<RE::FormID, Totals>> SnapshotDecayed();
-    std::optional<Totals> GetTotalsDecayed(RE::FormID id);
-    void GarbageCollectDecayed();
-    std::optional<ActiveComboHUD> PickActiveComboHUD(RE::FormID id);
     std::optional<HudGaugeBundle> PickHudIconDecayed(RE::FormID id);
 }
 

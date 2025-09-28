@@ -3,37 +3,29 @@ import flash.display.BitmapData;
 class ERF_Gauge extends MovieClip
 {
   // ====== camadas ======
-  private var gauge_mc:MovieClip;       // container central
-  private var halo_mc:MovieClip;        // fundo preto arredondado
-  private var ring_bg_mc:MovieClip;     // trilho cinza
-  private var ring_fg_mc:MovieClip;     // arcos coloridos
-  private var combo_mc:MovieClip;       // arco de combo
-  private var icon_container_mc:MovieClip;
+  private var gauge_mc:MovieClip;
+  private var halo_mc:MovieClip;
+  private var ring_bg_mc:MovieClip;
+  private var ring_fg_mc:MovieClip;
+  private var combo_mc:MovieClip;
+  private var _iconMC:MovieClip;
 
   // ====== geometria ======
-  private var rOut:Number      = 7;     // raio externo
-  private var strokePx:Number  = 2;     // espessura do traço
-  private var iconPadPx:Number = 0.5;   // espaço do ícone para dentro do anel
+  private var rOut:Number      = 7;
+  private var strokePx:Number  = 1.5;
+  private var iconPadPx:Number = 0.5;
+  private var iconNudgeX:Number = 0;
+  private var iconNudgeY:Number = 0;
 
   // ====== estado ======
   private var _ready:Boolean = false;
   private var _tried:Boolean = false;
 
-  // IDs de bitmap
-  private var _iconBitmapIds:Array = [
-    "icon_fire",
-    "icon_frost",
-    "icon_shock",
-    "icon_fire_frost",
-    "icon_fire_shock",
-    "icon_frost_shock",
-    "icon_fire_frost_shock"
-  ];
-
   function ERF_Gauge(){}
 
   // ---------- util ----------
-  private function _sum(a:Array):Number {
+  private function _sum(a:Array):Number
+  {
     var s:Number = 0;
     for (var i:Number = 0; i < a.length; ++i) {
       var v:Number = Number(a[i]); if (!isNaN(v)) s += v;
@@ -48,7 +40,7 @@ class ERF_Gauge extends MovieClip
     var to:Number   = Math.max(0, Math.min(1, t));
     if (to <= from) return;
 
-    var a0:Number = -Math.PI/2 + from * 2*Math.PI;   // todos começam no topo
+    var a0:Number = -Math.PI/2 + from * 2*Math.PI;
     var a1:Number = -Math.PI/2 + to   * 2*Math.PI;
 
     mc.lineStyle(strokePx, color, alpha);
@@ -63,7 +55,8 @@ class ERF_Gauge extends MovieClip
     }
   }
 
-  private function _drawFilledCircle(mc:MovieClip, r:Number, rgb:Number, alpha:Number):Void {
+  private function _drawFilledCircle(mc:MovieClip, r:Number, rgb:Number, alpha:Number):Void
+  {
     mc.clear();
     mc.lineStyle(0, 0x000000, 0);
     mc.beginFill(rgb, alpha);
@@ -77,14 +70,11 @@ class ERF_Gauge extends MovieClip
     mc.endFill();
   }
 
-  private function _clearAllRings():Void {
+  private function _clearAllRings():Void
+  {
     if (ring_bg_mc) ring_bg_mc.clear();
     if (ring_fg_mc) ring_fg_mc.clear();
     if (combo_mc)   combo_mc.clear();
-  }
-
-  private function _hideIcon():Void {
-    if (icon_container_mc) { icon_container_mc.removeMovieClip(); icon_container_mc = null; }
   }
 
   // ============ ciclo de vida ============
@@ -94,65 +84,74 @@ class ERF_Gauge extends MovieClip
 
     if (gauge_mc) gauge_mc.removeMovieClip();
     gauge_mc = this.createEmptyMovieClip("gauge_mc", 100);
-    gauge_mc._x = off;
+    gauge_mc._x = off; 
     gauge_mc._y = off;
 
-    halo_mc     = gauge_mc.createEmptyMovieClip("halo_mc",      0);
-    ring_bg_mc  = gauge_mc.createEmptyMovieClip("ring_bg_mc",  10);
-    ring_fg_mc  = gauge_mc.createEmptyMovieClip("ring_fg_mc",  20);
-    combo_mc    = gauge_mc.createEmptyMovieClip("combo_mc",    30);
+    halo_mc        = gauge_mc.createEmptyMovieClip("halo_mc",       0);
+    ring_bg_mc     = gauge_mc.createEmptyMovieClip("ring_bg_mc",   10);
+    ring_fg_mc     = gauge_mc.createEmptyMovieClip("ring_fg_mc",   20);
+    combo_mc       = gauge_mc.createEmptyMovieClip("combo_mc",     30);
 
     var haloMargin:Number = 2;
     var haloR:Number = rOut + (strokePx * 0.5) + haloMargin;
     _drawFilledCircle(halo_mc, haloR, 0x000000, 100);
 
-    _clearAllRings(); _hideIcon();
+    _clearAllRings();
 
     _ready = (ring_bg_mc != undefined && ring_fg_mc != undefined && combo_mc != undefined);
     _tried = true;
   }
 
-  private function _tryInit():Void {
+  private function _tryInit():Void
+  {
     if (_tried) return;
     _tried = true;
     onLoad();
   }
 
-  public function isReady():Boolean {
+  public function isReady():Boolean
+  {
     if (!_ready) _tryInit();
     return _ready;
   }
 
   // ============ API ============
-  public function setIcon(iconId:Number, tintRGB:Number, scaleMul:Number):Boolean
-  {
-    var idx:Number = (isNaN(iconId)) ? -1 : (iconId | 0);
-    if (idx < 0 || idx >= _iconBitmapIds.length) { _hideIcon(); return false; }
+  public function setIcon(path:String, rgb:Number):Boolean {
+    if (_iconMC) _iconMC.removeMovieClip();
+    _iconMC = gauge_mc.createEmptyMovieClip("icon_mc", 40);
 
-    _hideIcon();
+    if (rgb == undefined || isNaN(rgb)) rgb = 0xFFFFFF;
+    var r:Number = (rgb >> 16) & 0xFF;
+    var g:Number = (rgb >> 8)  & 0xFF;
+    var b:Number = (rgb)       & 0xFF;
 
-    var container:MovieClip = gauge_mc.createEmptyMovieClip("icon_container_mc", 200);
-    icon_container_mc = container;
+    if (path.substr(0,6) == "img://") {
+      _iconMC.loadMovie(path);              
+      var self:ERF_Gauge = this;
+      var tries:Number = 0;
+      _iconMC.onEnterFrame = function():Void {
+        if (++tries > 60) { delete this.onEnterFrame; } // timeout de 1s a ~60fps
 
-    var bmpId:String = _iconBitmapIds[idx];
-    var bd:BitmapData = BitmapData.loadBitmap(bmpId);
-    if (!bd) return false;
+        if (this._width > 0 && this._height > 0) {     // imagem real chegou
+          var side:Number = (self.rOut*2) - (self.strokePx*2) - (self.iconPadPx*2);
+          this._width  = side;
+          this._height = side;
+          this._x = -side/2 + self.iconNudgeX;
+          this._y = -side/2 + self.iconNudgeY;
+          this.cacheAsBitmap = true;
 
-    var holder:MovieClip = container.createEmptyMovieClip("icon_holder_mc", container.getNextHighestDepth());
-    holder.cacheAsBitmap = true;
-    holder.attachBitmap(bd, 1, "always", true);
+          var c:Color = new Color(this);
+          c.setTransform({
+            ra: (r*100/255), ga: (g*100/255), ba: (b*100/255), aa:100,
+            rb:0, gb:0, bb:0, ab:0
+          });
+          delete this.onEnterFrame;
+        }
+      };
+      return true;
+    }
 
-    var targetPx:Number = Math.max(2, (rOut - (strokePx * 0.5) - iconPadPx) * 2);
-    var baseScale:Number = (targetPx / Math.max(bd.width, bd.height)) * 100;
-    var mul:Number = (!isNaN(scaleMul) && scaleMul > 0) ? scaleMul : 1.0;
-    holder._xscale = holder._yscale = baseScale * mul;
-
-    holder._x = -Math.round(holder._width  / 2);
-    holder._y = -Math.round(holder._height / 2);
-
-    if (!isNaN(tintRGB)) { var c:Color = new Color(holder); c.setRGB(tintRGB); }
-
-    return true;
+    return false;
   }
 
   public function setComboFill(frac:Number, rgb:Number):Void
@@ -161,7 +160,6 @@ class ERF_Gauge extends MovieClip
     var f:Number = (isNaN(frac)) ? 0 : Math.max(0, Math.min(1, frac));
     _clearAllRings();
 
-    // trilho leve (opcional)
     ring_bg_mc.clear();
     _drawArc(ring_bg_mc, 0, 1, 0x000000, 30);
 
@@ -185,7 +183,7 @@ class ERF_Gauge extends MovieClip
     if (totalRaw <= 0) { this._visible = false; return; }
 
     var totalShown:Number = Math.min(100, totalRaw);
-    var scale:Number      = totalShown / totalRaw; // 0..1
+    var scale:Number      = totalShown / totalRaw;
 
     ring_bg_mc.clear();
     _drawArc(ring_bg_mc, 0, 1, 0x000000, 30);
@@ -195,15 +193,15 @@ class ERF_Gauge extends MovieClip
       var share:Number = Number(values[i]);
       if (isNaN(share) || share <= 0) continue;
 
-      share *= scale;                            
-      var seg:Number = (share / 100.0);          
+      share *= scale;                
+      var seg:Number = (share / 100.0);
 
       var col:Number = Number(colors[i]);
       if (isNaN(col)) col = 0xFFFFFF;
 
       _drawArc(ring_fg_mc, cur, cur + seg, col, 100);
       cur += seg;
-      if (cur >= 1) break;                     
+      if (cur >= 1) break;
     }
 
     this._visible = true;
