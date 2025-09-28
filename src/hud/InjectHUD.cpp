@@ -1,5 +1,6 @@
 #include "InjectHUD.h"
 
+#include <algorithm>
 #include <memory>
 #include <string_view>
 
@@ -11,79 +12,89 @@ namespace InjectHUD {
     TRUEHUD_API::IVTrueHUD4* g_trueHUD = nullptr;
     SKSE::PluginHandle g_pluginHandle = static_cast<SKSE::PluginHandle>(-1);
     std::unordered_map<RE::FormID, std::vector<std::shared_ptr<ERFWidget>>> widgets{};
-    std::unordered_map<RE::FormID, std::vector<ComboHUD>> combos;
+    std::unordered_map<RE::FormID, std::vector<ActiveReactionHUD>> combos;
+    std::deque<PendingReaction> g_comboQueue;
+    std::mutex g_comboMx;
 }
 
 namespace {
     using namespace InjectHUD;
-    using std::string_view_literals::operator""sv;
 
-    struct PendingCombo {
-        RE::FormID id{};
-        ElementalGauges::Combo which{};
-        float secs{0.f};
-        bool realTime{true};
-        RE::ActorHandle handle{};
-    };
-
-    static std::mutex g_comboMx;
-    static std::vector<PendingCombo> g_comboQueue;
-
-    // ---------------- Time helpers ----------------
     inline float NowHours() { return RE::Calendar::GetSingleton()->GetHoursPassed(); }
 
-    // ---------------- Icon/tint helpers ----------------
-    inline int IconIdFor(ElementalGauges::Combo c) {
-        using enum ElementalGauges::Combo;
-        switch (c) {
-            case Fire:
-                return 0;
-            case Frost:
-                return 1;
-            case Shock:
-                return 2;
-            case FireFrost:
-            case FrostFire:
-                return 3;
-            case FireShock:
-            case ShockFire:
-                return 4;
-            case FrostShock:
-            case ShockFrost:
-                return 5;
-            case FireFrostShock:
-                return 6;
-            default:
-                return 0;
+    // Drena a fila de "BeginReaction" para a UI e materializa ActiveReactionHUD.
+    static void DrainComboQueueOnUI() {
+        std::deque<PendingReaction> take;
+        {
+            std::scoped_lock lk(g_comboMx);
+            take.swap(g_comboQueue);
+        }
+        if (take.empty()) return;
+
+        const double nowRt = NowRtS();
+        const float nowH = NowHours();
+
+        auto& RR = ReactionRegistry::get();
+
+        for (auto& pr : take) {
+            RE::Actor* a = pr.handle ? pr.handle.get().get() : nullptr;
+            if (a) {
+                InjectHUD::AddFor(a);  // garante pelo menos slot 0
+            }
+
+            ActiveReactionHUD hud{};
+            hud.reaction = pr.reaction;
+            hud.realTime = pr.realTime;
+            hud.durationS = pr.secs;
+
+            if (pr.realTime) {
+                hud.endRtS = nowRt + pr.secs;
+            } else {
+                hud.endH = nowH + (pr.secs / 3600.0f);
+            }
+
+            // HUD: puxa do registro da reação
+            if (const auto* rd = RR.get(pr.reaction)) {
+                hud.iconPath = rd->hud.iconPath;  // << novo
+                hud.tint = rd->hud.iconTint;
+            } else {
+                // fallback defensivo (um dds qualquer)
+                hud.iconPath = "img://textures/erf/icons/icon_fire.dds";
+                hud.tint = 0xFFFFFF;
+            }
+
+            auto& vec = combos[pr.id];
+            // remove expirados antes de inserir (evita “fantasmas”)
+            std::erase_if(vec, [nowRt, nowH](const ActiveReactionHUD& c) {
+                return c.realTime ? (nowRt >= c.endRtS) : (nowH >= c.endH);
+            });
+            vec.push_back(std::move(hud));
+
+            spdlog::info("[InjectHUD] DrainComboQueueOnUI id={:08X} reaction={} secs={} rt={} total={}", pr.id,
+                         static_cast<unsigned>(pr.reaction), pr.secs, pr.realTime, vec.size());
         }
     }
 
-    inline std::uint32_t TintFor(ElementalGauges::Combo c) {
-        using enum ElementalGauges::Combo;
-        switch (c) {
-            case Fire:
-                return 0xF04A3A;
-            case Frost:
-                return 0x4FB2FF;
-            case Shock:
-                return 0xFFD02A;
-            case FireFrost:
-                return 0xE65ACF;
-            case FrostFire:
-                return 0x7A73FF;
-            case FireShock:
-                return 0xFF8A2A;
-            case ShockFire:
-                return 0xF6B22E;
-            case FrostShock:
-                return 0x49C9F0;
-            case ShockFrost:
-                return 0xB8E34D;
-            case FireFrostShock:
-                return 0xFFF0CC;
-            default:
-                return 0xFFFFFF;
+    // Filtra reações ainda vivas para o ator.
+    static std::vector<ActiveReactionHUD> GetActiveReactions(RE::FormID id) {
+        std::vector<ActiveReactionHUD> out;
+        const auto it = combos.find(id);
+        if (it == combos.end()) {
+            spdlog::debug("[InjectHUD] GetActiveReactions id={:08X} -> none", id);
+            return out;
         }
+
+        const double nowRt = NowRtS();
+        const float nowH = RE::Calendar::GetSingleton()->GetHoursPassed();
+
+        for (const auto& c : it->second) {
+            const bool alive = c.realTime ? (nowRt < c.endRtS) : (nowH < c.endH);
+            if (alive) out.push_back(c);
+        }
+        if (out.size() > 3) out.resize(3);  // limite visual
+
+        spdlog::info("[InjectHUD] GetActiveReactions id={:08X} -> {}", id, out.size());
+        return out;
     }
 
     // ---------------- Position helpers ----------------
@@ -94,48 +105,6 @@ namespace {
         return a && pc && (a == pc);
     }
 
-    static void DrainComboQueueOnUI() {
-        std::vector<PendingCombo> take;
-        {
-            std::scoped_lock lk(g_comboMx);
-            take.swap(g_comboQueue);
-        }
-        if (take.empty()) return;
-
-        const double nowRt = NowRtS();
-        const float nowH = NowHours();
-
-        for (auto& pc : take) {
-            // opcionalmente recupere o ator para AddFor
-            RE::Actor* a = pc.handle ? pc.handle.get().get() : nullptr;
-            if (a) {
-                InjectHUD::AddFor(a);  // garante vector/slot 0 criado na UI
-            }
-
-            // monta / registra o combo
-            InjectHUD::ComboHUD ch{};
-            ch.which = pc.which;
-            ch.realTime = pc.realTime;
-            ch.durationS = pc.secs;
-            ch.iconId = IconIdFor(pc.which);
-            ch.tint = TintFor(pc.which);
-            if (pc.realTime) {
-                ch.endRtS = NowRtS() + pc.secs;
-            } else {
-                ch.endH = NowHours() + (pc.secs / 3600.0f);
-            }
-
-            auto& vec = InjectHUD::combos[pc.id];
-            std::erase_if(vec, [nowRt, nowH](const InjectHUD::ComboHUD& c) {
-                return c.realTime ? (nowRt >= c.endRtS) : (nowH >= c.endH);
-            });
-            vec.push_back(ch);
-
-            spdlog::info("[InjectHUD] DrainComboQueueOnUI id={:08X} push which={} secs={} rt={} total={}", pc.id,
-                         (int)pc.which, pc.secs, pc.realTime, vec.size());
-        }
-    }
-
     static int CountAlive(const std::vector<WidgetPtr>& v) {
         int n = 0;
         for (auto& p : v)
@@ -143,21 +112,20 @@ namespace {
         return n;
     }
 
-    static int LowestFreeSlot(const std::vector<WidgetPtr>& v, int maxSlots) {
-        // menor slot em [0..maxSlots-1] que esteja vazio ou além do size
+    static int LowestFreeSlot(const std::vector<InjectHUD::WidgetPtr>& v, int maxSlots) {
         for (int s = 0; s < maxSlots; ++s) {
             if (s >= (int)v.size() || !v[s]) return s;
         }
-        return -1;  // sem vaga
+        return -1;
     }
 
-    static void CompactVisualPosAfterRemoval(std::vector<WidgetPtr>& v, int removedPos) {
+    static void CompactVisualPosAfterRemoval(std::vector<InjectHUD::WidgetPtr>& v, int removedPos) {
         for (auto& p : v) {
             if (p && p->_pos > removedPos) --p->_pos;
         }
     }
 
-    static void RemoveAtSlot(std::vector<WidgetPtr>& v, RE::FormID id, int slot) {
+    static void RemoveAtSlot(std::vector<InjectHUD::WidgetPtr>& v, RE::FormID id, int slot) {
         if (slot < 0 || slot >= (int)v.size() || !v[slot]) return;
         const auto wid = InjectHUD::MakeWidgetID(id, slot);
         ::InjectHUD::g_trueHUD->RemoveWidget(::InjectHUD::g_pluginHandle, ERF_WIDGET_TYPE, wid,
@@ -166,29 +134,6 @@ namespace {
         v[slot].reset();
         spdlog::info("[InjectHUD] RemoveAtSlot id={:08X} slot{} removedPos={}", id, slot, removedPos);
         CompactVisualPosAfterRemoval(v, removedPos);
-    }
-
-    // ---------------- Combo filtering/sorting ----------------
-    static std::vector<ComboHUD> GetActiveCombos(RE::FormID id) {
-        std::vector<ComboHUD> out;
-        const auto it = combos.find(id);
-        if (it == combos.end()) {
-            spdlog::debug("[InjectHUD] GetActiveCombos id={:08X} -> none (no entry)", id);
-            return out;
-        }
-
-        const double nowRt = NowRtS();
-        const float nowH = NowHours();
-
-        for (const auto& c : it->second) {
-            const bool alive = c.realTime ? (nowRt < c.endRtS) : (nowH < c.endH);
-            if (alive) out.push_back(c);
-        }
-
-        if (out.size() > 3) out.resize(3);
-
-        spdlog::info("[InjectHUD] GetActiveCombos id={:08X} -> {} alive (stable order)", id, out.size());
-        return out;
     }
 
     // ---------------- Player fixed layout ----------------
@@ -342,52 +287,57 @@ void InjectHUD::ERFWidget::FollowActorHead(RE::Actor* actor) {
     _lastY = py;
 }
 
-void InjectHUD::ERFWidget::SetIconAndGauge(uint32_t iconId, const std::vector<uint32_t>& values,
-                                           const std::vector<uint32_t>& colors, uint32_t tintRGB) {
+void InjectHUD::ERFWidget::SetIconAndGauge(const std::string& iconPath, const std::vector<std::uint32_t>& values,
+                                           const std::vector<std::uint32_t>& colors, std::uint32_t tintRGB) {
     if (!_view) {
-        spdlog::warn("[InjectHUD] SetIconAndGaugeN: _view=null slot={}", _slot);
+        spdlog::warn("[InjectHUD] SetIconAndGauge: _view=null slot={}", _slot);
         return;
     }
 
-    // verifica readiness do AS
     RE::GFxValue ready;
     if (!_object.Invoke("isReady", &ready, nullptr, 0) || !ready.IsBool() || !ready.GetBool()) {
-        spdlog::debug("[InjectHUD] SetIconAndGaugeN: view not ready slot={}", _slot);
+        spdlog::debug("[InjectHUD] SetIconAndGauge: view not ready slot={}", _slot);
         return;
     }
 
+    const std::size_t n = std::min(values.size(), colors.size());
+    if (n == 0) {
+        spdlog::info("[InjectHUD] SetIconAndGauge: empty arrays, hiding slot={}", _slot);
+        RE::GFxValue vis;
+        vis.SetBoolean(false);
+        _object.SetMember("_visible", vis);
+        _hadContent = false;
+        return;
+    }
     if (values.size() != colors.size()) {
-        spdlog::warn("[InjectHUD] SetIconAndGaugeN: size mismatch v={} c={}", values.size(), colors.size());
-        return;
+        spdlog::warn("[InjectHUD] SetIconAndGauge: size mismatch v={} c={} (trunc to {})", values.size(), colors.size(),
+                     n);
     }
 
-    // 1) ícone
+    // 1) Ícone (path + linkage vazio)
     {
-        RE::GFxValue args[3], ret;
-        args[0].SetNumber(static_cast<double>(iconId));
+        RE::GFxValue args[2], ret;
+        args[0].SetString(iconPath.c_str());
         args[1].SetNumber(static_cast<double>(tintRGB));
-        args[2].SetNumber(1.0);  // forceVisible
-        const bool ok = _object.Invoke("setIcon", &ret, args, 3);
-        spdlog::info("[InjectHUD] setIcon slot={} icon={} tint={:#X} ok={} retBool?={}", _slot, iconId, tintRGB, ok,
-                     ret.IsBool() ? ret.GetBool() : -1);
+        const bool ok = _object.Invoke("setIcon", &ret, args, 2);
+        spdlog::info("[InjectHUD] setIcon slot={} path='{}' tint={:#X} ok={} retBool?={}", _slot, iconPath, tintRGB, ok,
+                     (ret.IsBool() ? ret.GetBool() : -1));
     }
 
-    // 2) empacota arrays para o AS
+    // 2) Arrays (valores/cores)
     RE::GFxValue valsArr, colsArr;
     _view->CreateArray(&valsArr);
     _view->CreateArray(&colsArr);
 
     bool any = false;
-    for (std::size_t i = 0; i < values.size(); ++i) {
+    for (std::size_t i = 0; i < n; ++i) {
         const double v = std::clamp<double>(values[i], 0.0, 100.0);
-        any = any || (v > 0.0);
-
         RE::GFxValue vv, cc;
         vv.SetNumber(v);
         cc.SetNumber(static_cast<double>(colors[i]));
-
         valsArr.PushBack(vv);
         colsArr.PushBack(cc);
+        any = any || (v > 0.0);
     }
 
     {
@@ -395,55 +345,53 @@ void InjectHUD::ERFWidget::SetIconAndGauge(uint32_t iconId, const std::vector<ui
         args[0] = valsArr;
         args[1] = colsArr;
         const bool ok = _object.Invoke("setAccumulators", nullptr, args, 2);
-        spdlog::info("[InjectHUD] setAccumulatorsN slot={} count={} ok={}", _slot, values.size(), ok);
+        spdlog::info("[InjectHUD] setAccumulators slot={} count={} ok={}", _slot, n, ok);
     }
 
-    // 3) visibilidade
+    // 3) Visibilidade
     RE::GFxValue vis;
     vis.SetBoolean(any);
     const bool okVis = _object.SetMember("_visible", vis);
     spdlog::info("[InjectHUD] _visible({}) ok={}", any, okVis);
 
-    // Nota: smoothing agora fica por conta do AS (rise-only); podemos zerar estados locais
     _hadContent = any;
 }
 
-void InjectHUD::ERFWidget::SetCombo(int iconId, float remaining01, std::uint32_t tintRGB) {
+void InjectHUD::ERFWidget::SetCombo(const std::string& iconPath, float remaining01, std::uint32_t tintRGB) {
     if (!_view) {
         spdlog::warn("[InjectHUD] SetCombo: _view=null slot={}", _slot);
         return;
     }
 
     RE::GFxValue ready;
-    if (!_object.Invoke("isReady", &ready, nullptr, 0) || !ready.GetBool()) {
+    if (!_object.Invoke("isReady", &ready, nullptr, 0) || !ready.IsBool() || !ready.GetBool()) {
         spdlog::debug("[InjectHUD] SetCombo: view not ready slot={}", _slot);
         return;
     }
 
-    spdlog::info("[InjectHUD] SetCombo slot={} pos={} icon={} remain01={} tint={:#X}", _slot, _pos, iconId, remaining01,
+    const double f = std::clamp<double>(remaining01, 0.0, 1.0);
+    spdlog::info("[InjectHUD] SetCombo slot={} pos={} path='{}' remain01={} tint={:#X}", _slot, _pos, iconPath, f,
                  tintRGB);
-    bool ok = true;
-    // ícone
-    {
-        RE::GFxValue args[3], ret;
-        args[0].SetNumber(iconId);
-        args[1].SetNumber(tintRGB);
-        args[2].SetNumber(1);
-        ok &= _object.Invoke("setIcon", &ret, args, 3);
-        spdlog::info("[InjectHUD] setIcon ok={} retBool?={}", ok, ret.IsBool() ? ret.GetBool() : -1);
-    }
-    spdlog::info("Icone setado");
 
-    // fill
+    bool ok = true;
+
+    // Ícone do combo (path + linkage vazio)
+    {
+        RE::GFxValue args[2], ret;
+        args[0].SetString(iconPath.c_str());
+        args[1].SetNumber(static_cast<double>(tintRGB));
+        ok &= _object.Invoke("setIcon", &ret, args, 2);
+        spdlog::info("[InjectHUD] setIcon(ok={}) retBool?={}", ok, (ret.IsBool() ? ret.GetBool() : -1));
+    }
+
+    // Preenchimento do anel de combo
     {
         RE::GFxValue args[2];
-        const double f = std::clamp<double>(remaining01, 0.0, 1.0);
         args[0].SetNumber(f);
-        args[1].SetNumber(tintRGB);
+        args[1].SetNumber(static_cast<double>(tintRGB));
         ok &= _object.Invoke("setComboFill", nullptr, args, 2);
         spdlog::info("[InjectHUD] setComboFill ok={} f={}", ok, f);
     }
-    spdlog::info("Fill atualizado");
 
     RE::GFxValue vis;
     vis.SetBoolean(true);
@@ -472,12 +420,11 @@ void InjectHUD::AddFor(RE::Actor* actor) {
         return;
     }
 
-    // cria slot físico 0
     auto w0 = std::make_shared<ERFWidget>(0);
     const auto wid0 = MakeWidgetID(id, 0);
     spdlog::info("[InjectHUD] AddFor id={:08X} -> AddWidget slot0 wid={:08X}", id, wid0);
     g_trueHUD->AddWidget(g_pluginHandle, ERF_WIDGET_TYPE, wid0, ERF_SYMBOL_NAME, w0);
-    w0->ProcessDelegates();  // aquece view
+    w0->ProcessDelegates();
     if (!w0->_view) {
         spdlog::error("[InjectHUD] AddFor id={:08X} slot0 view=null após ProcessDelegates()", id);
     }
@@ -504,10 +451,10 @@ void InjectHUD::UpdateFor(RE::Actor* actor) {
         return;
     }
 
-    // Combos ativos
-    const auto actives = GetActiveCombos(id);
+    // 1) Reações ativas (N)
+    const auto actives = GetActiveReactions(id);
 
-    // --- NOVO: bundle do acumulador (N elementos) ---
+    // 2) Bundle do acumulador (N elementos) + sugestão de ícone (por reação “mais adequada”)
     auto bundleOpt = ElementalGauges::PickHudIconDecayed(id);
     const bool haveTotals =
         bundleOpt.has_value() && !bundleOpt->values.empty() &&
@@ -519,7 +466,6 @@ void InjectHUD::UpdateFor(RE::Actor* actor) {
     spdlog::info("[InjectHUD] UpdateFor id={:08X} actives={} haveTotals={} needed={} listSize={}", id, actives.size(),
                  haveTotals, needed, list.size());
 
-    // esconder tudo?
     if (needed == 0) {
         for (auto& w : list) {
             if (w && w->_view) {
@@ -531,7 +477,7 @@ void InjectHUD::UpdateFor(RE::Actor* actor) {
         return;
     }
 
-    // infobar
+    // Garantir InfoBar
     const auto h = actor->GetHandle();
     g_trueHUD->AddActorInfoBar(h);
     if (!g_trueHUD->HasInfoBar(h, true) && !IsPlayerActor(actor)) {
@@ -539,7 +485,7 @@ void InjectHUD::UpdateFor(RE::Actor* actor) {
         return;
     }
 
-    // --- Crescer: cria no MENOR SLOT LIVRE (preenche “buracos”) ---
+    // Crescer
     const int kMaxSlots = 3;
     while (CountAlive(list) < needed) {
         const int slot = LowestFreeSlot(list, kMaxSlots);
@@ -555,13 +501,12 @@ void InjectHUD::UpdateFor(RE::Actor* actor) {
         w->ProcessDelegates();
         if (!w->_view) spdlog::error("[InjectHUD] slot{} view=null after ProcessDelegates()", slot);
 
-        // _pos = ordem visual atual (conta vivos *antes* de inserir)
         w->SetPos(CountAlive(list));
         list[slot] = std::move(w);
         spdlog::info("[InjectHUD] AddWidget slot{}: actor {:08X} pos={}", slot, id, list[slot]->_pos);
     }
 
-    // --- Encolher: remove slots vivos até bater 'needed' ---
+    // Encolher
     while (CountAlive(list) > needed) {
         int victim = -1;
         for (int s = (int)list.size() - 1; s >= 0; --s) {
@@ -573,32 +518,37 @@ void InjectHUD::UpdateFor(RE::Actor* actor) {
         RemoveAtSlot(list, id, victim);
     }
 
-    // --- Pintura: por SLOT ---
+    // Pintura por slot
     std::array<bool, 3> used{};
     used.fill(false);
 
-    // 1) Pintar combos primeiro
-    int paintedCombos = 0;
-    for (int s = 0; s < (int)list.size() && paintedCombos < (int)actives.size(); ++s) {
+    // 1) Reações primeiro
+    int painted = 0;
+    for (int s = 0; s < (int)list.size() && painted < (int)actives.size(); ++s) {
         if (!list[s] || !list[s]->_view) continue;
-
         auto& w = *list[s];
-        w.SetPos(paintedCombos);  // ordem visual 0,1 para combos
+        w.SetPos(painted);
         w.FollowActorHead(actor);
 
-        const auto& c = actives[paintedCombos];
-        const double remain = c.realTime ? (c.endRtS - NowRtS()) : (double(c.endH - NowHours()) * 3600.0);
-        const double frac = std::clamp(remain / std::max(0.001, (double)c.durationS), 0.0, 1.0);
-        spdlog::info("[InjectHUD] PaintCombo id={:08X} slot{} pos={} icon={} frac={}", id, s, w._pos, c.iconId, frac);
-        w.SetCombo(c.iconId, (float)frac, c.tint);
+        const auto& r = actives[painted];
+        const double remain = r.realTime ? (r.endRtS - NowRtS()) : (double(r.endH - NowHours()) * 3600.0);
+        const double denom = std::max(0.001, (double)r.durationS);
+        const double frac = std::clamp(remain / denom, 0.0, 1.0);
+
+        spdlog::info("[InjectHUD] PaintReaction id={:08X} slot{} pos={} path='{}' frac={:.3f} tint=#{:06X}", id, s,
+                     w._pos, r.iconPath, frac, r.tint);
+
+        // nova assinatura: SetCombo(iconPath, remaining01, tint)
+        w.SetCombo(r.iconPath, (float)frac, r.tint);
         used[s] = true;
-        ++paintedCombos;
+        ++painted;
     }
 
-    // 2) Pintar acumulador (N elementos) no primeiro slot livre
+    // 2) Acumulador no primeiro slot livre
     if (haveTotals) {
-        int accumPos = paintedCombos;
+        int accumPos = painted;
         bool done = false;
+
         for (int s = 0; s < (int)list.size(); ++s) {
             if (!list[s] || !list[s]->_view || used[s]) continue;
 
@@ -606,36 +556,39 @@ void InjectHUD::UpdateFor(RE::Actor* actor) {
             w.SetPos(accumPos);
             w.FollowActorHead(actor);
 
-            // usa o bundle calculado lá em cima (1 chamada só)
             const auto& b = *bundleOpt;
-            spdlog::info("[InjectHUD] PaintAccum id={:08X} slot{} pos={} nVals={}", id, s, w._pos, b.values.size());
-            w.SetIconAndGauge(b.iconId, b.values, b.colors, b.iconTint);
+            spdlog::info("[InjectHUD] PaintAccum id={:08X} slot{} pos={} nVals={} nCols={} path='{}' tint=#{:06X}", id,
+                         s, w._pos, b.values.size(), b.colors.size(), b.iconPath, b.iconTint);
+
+            // nova assinatura: SetIconAndGauge(iconPath, values, colors, tint)
+            w.SetIconAndGauge(b.iconPath, b.values, b.colors, b.iconTint);
 
             used[s] = true;
             done = true;
             break;
         }
+
         if (!done) spdlog::debug("[InjectHUD] No free slot to paint accumulator (all used?)");
     }
 }
 
-void InjectHUD::BeginCombo(RE::Actor* a, ElementalGauges::Combo which, float seconds, bool realTime) {
+void InjectHUD::BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float seconds, bool realTime) {
     if (!a || seconds <= 0.f) return;
 
     const auto id = a->GetFormID();
-    spdlog::info("[InjectHUD] BeginCombo enqueue id={:08X} which={} seconds={} realTime={}", id, (int)which, seconds,
-                 realTime);
+    spdlog::info("[InjectHUD] BeginReaction enqueue id={:08X} reaction={} seconds={} realTime={}", id,
+                 static_cast<unsigned>(handle), seconds, realTime);
 
-    PendingCombo pc{};
-    pc.id = id;
-    pc.which = which;
-    pc.secs = seconds;
-    pc.realTime = realTime;
-    pc.handle = a->GetHandle();
+    PendingReaction pr{};
+    pr.id = id;
+    pr.handle = a->CreateRefHandle();
+    pr.reaction = handle;
+    pr.secs = seconds;
+    pr.realTime = realTime;
 
     {
         std::scoped_lock lk(g_comboMx);
-        g_comboQueue.push_back(pc);
+        g_comboQueue.push_back(std::move(pr));
     }
 }
 
@@ -651,7 +604,7 @@ bool InjectHUD::RemoveFor(RE::FormID id) {
         g_trueHUD->RemoveWidget(g_pluginHandle, ERF_WIDGET_TYPE, wid, TRUEHUD_API::WidgetRemovalMode::Immediate);
     }
     widgets.erase(it);
-    combos.erase(id);
+    combos.erase(id);  // limpa reações ativas desse ator
     return true;
 }
 
@@ -659,6 +612,7 @@ void InjectHUD::RemoveAllWidgets() {
     spdlog::info("[InjectHUD] RemoveAllWidgets count={} (has TrueHUD?{})", widgets.size(), (g_trueHUD != nullptr));
     if (!g_trueHUD) {
         widgets.clear();
+        combos.clear();
         return;
     }
 
@@ -670,28 +624,27 @@ void InjectHUD::RemoveAllWidgets() {
         }
     }
     widgets.clear();
+    combos.clear();
 }
 
 void InjectHUD::OnTrueHUDClose() {
     spdlog::info("[InjectHUD] OnTrueHUDClose");
     RemoveAllWidgets();
-    combos.clear();
-    HUD::ResetTracking();  // preservado
+    HUD::ResetTracking();
 }
 
 void InjectHUD::OnUIFrameBegin() { DrainComboQueueOnUI(); }
 
-inline double InjectHUD::NowRtS() {
+double InjectHUD::NowRtS() {
     using clock = std::chrono::steady_clock;
     static const auto t0 = clock::now();
     return std::chrono::duration<double>(clock::now() - t0).count();
 }
 
 std::uint32_t InjectHUD::MakeWidgetID(RE::FormID id, int slot) {
-    // mistura determinística simples (32-bit) para minimizar colisões entre atores de mods diferentes
     std::uint32_t x = static_cast<std::uint32_t>(id);
-    x ^= 0x9E3779B9u + (x << 6) + (x >> 2);                      // mix 1 (inspirado em boost::hash_combine)
-    x ^= (static_cast<std::uint32_t>(slot) + 1u) * 0x85EBCA6Bu;  // mistura o slot (0..2)
-    x ^= (x >> 16);                                              // avalanche leve
-    return x ? x : 0xA5A5A5A5u;                                  // evita retornar 0 por paranoia
+    x ^= 0x9E3779B9u + (x << 6) + (x >> 2);
+    x ^= (static_cast<std::uint32_t>(slot) + 1u) * 0x85EBCA6Bu;
+    x ^= (x >> 16);
+    return x ? x : 0xA5A5A5A5u;
 }

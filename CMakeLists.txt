@@ -30,11 +30,11 @@ add_commonlibsse_plugin(ElementalReactionsFramework
     src/common/PluginSerialization.cpp
     src/elemental_reactions/ElementalGauges.cpp
     src/elemental_reactions/ElementalGaugesHook.cpp
-    src/elemental_reactions/ElementalEffects.cpp
     src/hud/HUDTick.cpp
     src/hud/InjectHUD.cpp
     src/hud/TrueHUDMenuWatcher.cpp
     src/elemental_reactions/erf_element.cpp
+    src/elemental_reactions/erf_reaction.cpp
 )
 
 target_include_directories(ElementalReactionsFramework PRIVATE ${truehud_SOURCE_DIR}/src)
@@ -44,16 +44,16 @@ target_compile_features(ElementalReactionsFramework PRIVATE cxx_std_23)
 target_precompile_headers(ElementalReactionsFramework PRIVATE 
   src/PCH.h
   src/Utils.h
-  src/elemental_reactions/ElementalStates.h
   src/common/PluginSerialization.h
   src/common/Helpers.h
+  src/elemental_reactions/ElementalStates.h
   src/elemental_reactions/ElementalGauges.h
   src/elemental_reactions/ElementalGaugesHook.h
-  src/elemental_reactions/ElementalEffects.h
   src/hud/HUDTick.h
   src/hud/InjectHUD.h
   src/hud/TrueHUDMenuWatcher.h
   src/elemental_reactions/erf_element.h
+  src/elemental_reactions/erf_reaction.h
 )
 
 if(DEFINED OUTPUT_FOLDER)
