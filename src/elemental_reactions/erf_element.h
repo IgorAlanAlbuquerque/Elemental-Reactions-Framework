@@ -6,8 +6,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "ElementalStates.h"
 #include "RE/Skyrim.h"
+#include "erf_state.h"
 
 using ERF_ElementHandle = std::uint16_t;
 
@@ -15,7 +15,15 @@ struct ERF_ElementDesc {
     std::string name;
     std::uint32_t colorRGB;
     RE::BGSKeyword* keyword;
-    std::unordered_map<ElementalStates::Flag, double> stateMultipliers;
+    std::unordered_map<ERF_StateHandle, double> stateMultipliers;
+    void setMultiplierForState(ERF_StateHandle sh, double mult) {
+        if (sh != 0) stateMultipliers[sh] = mult;
+    }
+    double getMultiplierForState(ERF_StateHandle sh, double fallback = 1.0) const {
+        if (sh == 0) return fallback;
+        if (auto it = stateMultipliers.find(sh); it != stateMultipliers.end()) return it->second;
+        return fallback;
+    }
 };
 
 class ElementRegistry {

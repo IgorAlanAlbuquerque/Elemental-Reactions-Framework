@@ -6,79 +6,133 @@
 
 #include "../common/Helpers.h"
 #include "../common/PluginSerialization.h"
+#include "erf_state.h"
 
-namespace ElementalStates {
-    namespace Flags {
-        using Bits = std::byte;
-        using Map = std::unordered_map<RE::FormID, Bits>;
+namespace {
+    struct PerActorStates {
+        std::unordered_set<ERF_StateHandle> active;
+    };
 
-        static Map& state() noexcept {
-            static Map m;  // NOSONAR: estado centralizado com duração estática, serializado via SKSE
-            return m;
-        }
+    std::unordered_map<RE::FormID, PerActorStates> g_store;
 
-        [[nodiscard]] constexpr std::byte bit(Flag f) noexcept {
-            return std::byte{1} << static_cast<int>(std::to_underlying(f));
-        }
+    inline RE::FormID IdOf(RE::Actor* a) { return a ? a->GetFormID() : 0; }
 
-        inline constexpr std::uint32_t kRecordID = FOURCC('F', 'L', 'G', 'S');
-        inline constexpr std::uint32_t kVersion = 1;
+    namespace StatesSer {
+        constexpr std::uint32_t kRecordID = 'ESTS';
+        constexpr std::uint32_t kVersion = 2;
     }
 
-    void Set(RE::Actor* a, Flag f, bool value) {
-        if (!a) return;
-        auto& b = Flags::state()[a->GetFormID()];
-        const auto m = Flags::bit(f);
-        if (value)
-            b |= m;
-        else
-            b &= ~m;
-    }
-    bool Get(RE::Actor* a, Flag f) {
-        if (!a) return false;
-        const auto it = Flags::state().find(a->GetFormID());
-        if (it == Flags::state().end()) return false;
-        return (it->second & Flags::bit(f)) != std::byte{0};
-    }
-    void Clear(RE::Actor* a) {
-        if (a) Flags::state().erase(a->GetFormID());
-    }
-    void ClearAll() { Flags::state().clear(); }
+    bool Save(SKSE::SerializationInterface* ser) {
+        const auto countActors = static_cast<std::uint32_t>(g_store.size());
+        if (!ser->WriteRecordData(&countActors, sizeof(countActors))) return false;
 
-    namespace {
-        bool Save(SKSE::SerializationInterface* ser) {
-            const auto& m = Flags::state();
-            const auto count = static_cast<std::uint32_t>(m.size());
-            ser->WriteRecordData(&count, sizeof(count));
-            for (const auto& [id, b] : m) {
-                std::uint8_t raw = std::to_integer<std::uint8_t>(b);
-                ser->WriteRecordData(&id, sizeof(id));
-                ser->WriteRecordData(&raw, sizeof(raw));
+        for (const auto& [id, st] : g_store) {
+            if (!ser->WriteRecordData(&id, sizeof(id))) return false;
+
+            std::uint16_t n = static_cast<std::uint16_t>(
+                std::min<std::size_t>(st.active.size(), std::numeric_limits<std::uint16_t>::max()));
+            if (!ser->WriteRecordData(&n, sizeof(n))) return false;
+
+            if (n > 0) {
+                std::vector<ERF_StateHandle> tmp;
+                tmp.reserve(n);
+                for (auto sh : st.active) tmp.push_back(sh);
+                std::sort(tmp.begin(), tmp.end());
+
+                for (std::uint16_t i = 0; i < n; ++i) {
+                    if (!ser->WriteRecordData(&tmp[i], sizeof(ERF_StateHandle))) return false;
+                }
             }
-            return true;
         }
+        return true;
+    }
 
-        bool Load(SKSE::SerializationInterface* ser, std::uint32_t version, std::uint32_t) {
-            if (version != Flags::kVersion) return false;
-            std::uint32_t count{};
-            if (!ser->ReadRecordData(&count, sizeof(count))) return false;
+    bool Load(SKSE::SerializationInterface* ser, std::uint32_t version, std::uint32_t) {
+        g_store.clear();
 
-            auto& m = Flags::state();
-            m.clear();
+        if (version == StatesSer::kVersion) {
+            std::uint32_t countActors{};
+            if (!ser->ReadRecordData(&countActors, sizeof(countActors))) return false;
 
-            for (std::uint32_t i = 0; i < count; ++i) {
+            for (std::uint32_t i = 0; i < countActors; ++i) {
                 RE::FormID oldID{};
-                std::uint8_t raw{};
-                if (!(ser->ReadRecordData(&oldID, sizeof(oldID)) && ser->ReadRecordData(&raw, sizeof(raw)))) break;
+                if (!ser->ReadRecordData(&oldID, sizeof(oldID))) return false;
+
                 RE::FormID newID{};
-                if (!ser->ResolveFormID(oldID, newID)) continue;
-                m[newID] = std::byte{raw};
+                if (!ser->ResolveFormID(oldID, newID)) {
+                    std::uint16_t n{};
+                    if (!ser->ReadRecordData(&n, sizeof(n))) return false;
+                    for (std::uint16_t k = 0; k < n; ++k) {
+                        ERF_StateHandle dummy{};
+                        if (!ser->ReadRecordData(&dummy, sizeof(dummy))) return false;
+                    }
+                    continue;
+                }
+
+                std::uint16_t n{};
+                if (!ser->ReadRecordData(&n, sizeof(n))) return false;
+
+                auto& setRef = g_store[newID].active;
+                for (std::uint16_t k = 0; k < n; ++k) {
+                    ERF_StateHandle sh{};
+                    if (!ser->ReadRecordData(&sh, sizeof(sh))) return false;
+                    if (sh != 0) setRef.insert(sh);
+                }
             }
             return true;
         }
 
-        void Revert() { Flags::state().clear(); }
+        spdlog::warn("[ElementalStates] Unknown serialization version {}. Clearing store.", version);
+        g_store.clear();
+        return false;
     }
 
-    void RegisterStore() { Ser::Register({Flags::kRecordID, Flags::kVersion, &Save, &Load, &Revert}); }
+    void Revert() { g_store.clear(); }
+}
+
+void ElementalStates::RegisterStore() {
+    Ser::Register({StatesSer::kRecordID, StatesSer::kVersion, &Save, &Load, &Revert});
+}
+
+bool ElementalStates::SetActive(RE::Actor* a, ERF_StateHandle sh, bool value) {
+    if (!a || sh == 0) return false;
+    const auto id = IdOf(a);
+    if (id == 0) return false;
+    auto& st = g_store[id].active;
+    if (value) {
+        st.insert(sh);
+    } else {
+        st.erase(sh);
+    }
+    return true;
+}
+
+bool ElementalStates::IsActive(RE::Actor* a, ERF_StateHandle sh) {
+    if (!a || sh == 0) return false;
+    const auto id = IdOf(a);
+    auto it = g_store.find(id);
+    if (it == g_store.end()) return false;
+    return it->second.active.count(sh) > 0;
+}
+
+void ElementalStates::Activate(RE::Actor* a, ERF_StateHandle sh) { (void)SetActive(a, sh, true); }
+void ElementalStates::Deactivate(RE::Actor* a, ERF_StateHandle sh) { (void)SetActive(a, sh, false); }
+
+void ElementalStates::Clear(RE::Actor* a) {
+    if (!a) return;
+    const auto id = IdOf(a);
+    g_store.erase(id);
+}
+
+void ElementalStates::ClearAll() { g_store.clear(); }
+
+std::vector<ERF_StateHandle> ElementalStates::GetActive(RE::Actor* a) {
+    std::vector<ERF_StateHandle> out;
+    if (!a) return out;
+    const auto id = IdOf(a);
+    auto it = g_store.find(id);
+    if (it == g_store.end()) return out;
+    out.reserve(it->second.active.size());
+    for (auto sh : it->second.active) out.push_back(sh);
+    return out;
 }
