@@ -5,6 +5,7 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include "../elemental_reactions/ElementalGauges.h"
 #include "InjectHUD.h"
@@ -42,18 +43,30 @@ namespace {
 
         // 3) Varre todos os alvos com gauges vivos/decay e processa
         spdlog::info("[HUDTick] ForEachDecayed begin");
-        ElementalGauges::ForEachDecayed([&](RE::FormID id, const ElementalGauges::Totals& totals) {
-            spdlog::info("[HUDTick] FE id={:08X} totals N={}", id, totals.values.size());
+        ElementalGauges::ForEachDecayed([&](RE::FormID id, ElementalGauges::TotalsView totals) {
+            spdlog::info("[HUDTick] FE id={:08X} totals N={}", id, totals.size());
             alive.insert(id);
 
-            RE::Actor* a = RE::TESForm::LookupByID<RE::Actor>(id);
+            RE::Actor* a = nullptr;
+            if (auto itW = InjectHUD::widgets.find(id); itW != InjectHUD::widgets.end()) {
+                a = (itW->second.handle) ? itW->second.handle.get().get() : nullptr;
+            }
             if (!a) {
-                spdlog::info("[HUDTick] FE id={:08X} actor lookup failed -> mark RemoveFor", id);
+                a = RE::TESForm::LookupByID<RE::Actor>(id);
+                if (a) {
+                    auto& entry = InjectHUD::widgets[id];
+                    entry.handle = a->CreateRefHandle();
+                }
+            }
+
+            if (!a) {
+                spdlog::info("[HUDTick] FE id={:08X} actor resolve failed -> mark RemoveFor", id);
                 toRemove.push_back(id);
                 lastAddedAt.erase(id);
                 lastSeen.erase(id);
                 return;
             }
+
             if (a->IsDead()) {
                 spdlog::info("[HUDTick] FE id={:08X} actor is dead -> mark RemoveFor", id);
                 toRemove.push_back(id);
@@ -62,8 +75,7 @@ namespace {
                 return;
             }
 
-            // Garante que existe pelo menos um widget (slot 0) para este ator
-            spdlog::info("[HUDTick] FE id={:08X} calling AddFor()", id);
+            // Garante slot 0 apenas quando temos 'a' por handle/bootstrap
             InjectHUD::AddFor(a);
 
             // Janela de graça para evitar piscadas no 1º frame

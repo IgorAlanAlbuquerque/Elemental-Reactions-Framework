@@ -10,6 +10,7 @@
 #include <ranges>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -136,6 +137,8 @@ namespace Gauges {
 }
 
 namespace {
+    thread_local std::vector<std::uint8_t> TL_totals;
+
     inline double NowRealSeconds() {
         using clock = std::chrono::steady_clock;
         static const auto t0 = clock::now();
@@ -586,7 +589,7 @@ void ElementalGauges::Clear(RE::Actor* a) {
     m.erase(a->GetFormID());
 }
 
-void ElementalGauges::ForEachDecayed(const std::function<void(RE::FormID, const Totals&)>& fn) {
+void ElementalGauges::ForEachDecayed(const std::function<void(RE::FormID, TotalsView)>& fn) {
     auto& m = Gauges::state();
     const float nowH = NowHours();
     const double nowRt = NowRealSeconds();
@@ -595,57 +598,64 @@ void ElementalGauges::ForEachDecayed(const std::function<void(RE::FormID, const 
         auto& e = it->second;
         Gauges::tickAll(e, nowH);
 
+        const std::size_t begin = Gauges::firstIndex();
+        const std::size_t n = e.v.size();
+        const std::size_t count = (n > begin) ? (n - begin) : 0;
+
+        TL_totals.resize(count);
+
         bool anyVal = false;
-        for (std::size_t i = Gauges::firstIndex(); i < e.v.size(); ++i) {
-            if (e.v[i] > 0) {
-                anyVal = true;
-                break;
-            }
-        }
-
         bool anyElemLock = false;
-        for (std::size_t i = Gauges::firstIndex(); i < e.v.size(); ++i) {
-            if (e.blockUntilH[i] > nowH || e.blockUntilRtS[i] > nowRt) {
-                anyElemLock = true;
-                break;
+        bool anyReactCd = false;
+        bool anyReactFlag = false;
+
+        for (std::size_t i = begin, j = 0; i < n; ++i, ++j) {
+            const auto v = e.v[i];
+            TL_totals[j] = v;  // 0..100 já está clampado em quem escreve
+            anyVal |= (v > 0);
+
+            if (!anyElemLock) {
+                const bool lockH = (i < e.blockUntilH.size()) && (e.blockUntilH[i] > nowH);
+                const bool lockRt = (i < e.blockUntilRtS.size()) && (e.blockUntilRtS[i] > nowRt);
+                anyElemLock = lockH || lockRt;
             }
         }
 
-        bool anyReactCd = false, anyReactFlag = false;
-        for (const auto& kv : e.reactBlockUntilH) {
-            if (kv.second > nowH) {
-                anyReactCd = true;
-                break;
+        if (!e.reactBlockUntilH.empty())
+            for (const auto& kv : e.reactBlockUntilH) {
+                if (kv.second > nowH) {
+                    anyReactCd = true;
+                    break;
+                }
             }
-        }
-        if (!anyReactCd)
+        if (!anyReactCd && !e.reactBlockUntilRtS.empty())
             for (const auto& kv : e.reactBlockUntilRtS) {
                 if (kv.second > nowRt) {
                     anyReactCd = true;
                     break;
                 }
             }
-        for (const auto& kv : e.inReaction) {
-            if (kv.second != 0) {
-                anyReactFlag = true;
-                break;
+        if (!e.inReaction.empty())
+            for (const auto& kv : e.inReaction) {
+                if (kv.second != 0) {
+                    anyReactFlag = true;
+                    break;
+                }
             }
+
+        if (!anyVal && !anyElemLock && !anyReactCd && !anyReactFlag) {
+            it = m.erase(it);  // entrada “morta” some do mapa
+            continue;
         }
 
-        Totals t{};
-        if (e.v.size() > Gauges::firstIndex()) t.values.reserve(e.v.size() - Gauges::firstIndex());
-        for (std::size_t i = Gauges::firstIndex(); i < e.v.size(); ++i) t.values.push_back(e.v[i]);
-
-        if (anyVal) {
-            fn(it->first, t);
-            ++it;
-        } else if (anyElemLock || anyReactCd || anyReactFlag) {
-            std::fill(t.values.begin(), t.values.end(), 0);
-            fn(it->first, t);
-            ++it;
-        } else {
-            it = m.erase(it);
+        TotalsView view{std::span<const std::uint8_t>(TL_totals.data(), TL_totals.size())};
+        if (!anyVal) {
+            std::fill(TL_totals.begin(), TL_totals.end(), 0);
+            view.values = std::span<const std::uint8_t>(TL_totals.data(), TL_totals.size());
         }
+
+        fn(it->first, view);
+        ++it;
     }
 }
 

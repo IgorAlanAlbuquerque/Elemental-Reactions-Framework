@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "../common/Helpers.h"
 #include "../elemental_reactions/erf_reaction.h"
 #include "SKSE/SKSE.h"
 #include "TrueHUDAPI.h"
@@ -35,12 +36,16 @@ namespace InjectHUD {
 
     class ERFWidget;
     using WidgetPtr = std::shared_ptr<ERFWidget>;
+    struct HUDEntry {
+        RE::ActorHandle handle{};
+        std::vector<WidgetPtr> slots;
+    };
 
     constexpr auto ERF_SWF_PATH = "erfgauge/erfgauge.swf";
     constexpr auto ERF_SYMBOL_NAME = "ERF_Gauge";
-    constexpr uint32_t ERF_WIDGET_TYPE = 'ELRE';
+    constexpr uint32_t ERF_WIDGET_TYPE = FOURCC('E', 'L', 'R', 'E');
 
-    extern std::unordered_map<RE::FormID, std::vector<WidgetPtr>> widgets;
+    extern std::unordered_map<RE::FormID, HUDEntry> widgets;
     extern std::unordered_map<RE::FormID, std::vector<ActiveReactionHUD>> combos;
     extern std::deque<PendingReaction> g_comboQueue;
     extern std::mutex g_comboMx;

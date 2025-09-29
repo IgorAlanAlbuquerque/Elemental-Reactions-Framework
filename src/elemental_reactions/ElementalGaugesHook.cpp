@@ -48,7 +48,6 @@ namespace GaugesHook {
 
         if (g_kwGaugeAcc) {
             const auto kwIDWant = g_kwGaugeAcc->GetFormID();
-            std::size_t i = 0;
             for (auto* kw : mgef->GetKeywords()) {
                 const auto id = kw ? kw->GetFormID() : 0u;
                 if (kw && id == kwIDWant) {
@@ -72,7 +71,6 @@ namespace GaugesHook {
         }
 
         const auto kws = mgef->GetKeywords();
-        std::size_t i = 0;
         for (RE::BGSKeyword* kw : kws) {
             if (!kw) continue;
             if (auto h = ElementRegistry::get().findByKeyword(kw)) {

@@ -11,7 +11,7 @@
 namespace InjectHUD {
     TRUEHUD_API::IVTrueHUD4* g_trueHUD = nullptr;
     SKSE::PluginHandle g_pluginHandle = static_cast<SKSE::PluginHandle>(-1);
-    std::unordered_map<RE::FormID, std::vector<std::shared_ptr<ERFWidget>>> widgets{};
+    std::unordered_map<RE::FormID, HUDEntry> widgets{};
     std::unordered_map<RE::FormID, std::vector<ActiveReactionHUD>> combos;
     std::deque<PendingReaction> g_comboQueue;
     std::mutex g_comboMx;
@@ -407,7 +407,12 @@ void InjectHUD::AddFor(RE::Actor* actor) {
     }
 
     const auto id = actor->GetFormID();
-    auto& vec = widgets[id];
+    auto& entry = widgets[id];
+
+    // cachear o handle do ator (barato e persistente)
+    entry.handle = actor->CreateRefHandle();
+
+    auto& vec = entry.slots;
     if (!vec.empty()) {
         spdlog::info("[InjectHUD] AddFor id={:08X} already has {} widgets", id, vec.size());
         return;
@@ -445,12 +450,11 @@ void InjectHUD::UpdateFor(RE::Actor* actor) {
         spdlog::debug("[InjectHUD] UpdateFor id={:08X} -> no widgets entry", id);
         return;
     }
-    auto& list = it->second;
+    auto& list = it->second.slots;
     if (list.empty()) {
         spdlog::debug("[InjectHUD] UpdateFor id={:08X} -> empty list", id);
         return;
     }
-
     // 1) Reações ativas (N)
     const auto actives = GetActiveReactions(id);
 
@@ -597,14 +601,15 @@ bool InjectHUD::RemoveFor(RE::FormID id) {
     auto it = widgets.find(id);
     if (it == widgets.end()) return false;
 
-    spdlog::info("[InjectHUD] RemoveFor id={:08X} slots={}", id, it->second.size());
-    for (int slot = 0; slot < (int)it->second.size(); ++slot) {
-        if (!it->second[slot]) continue;
+    auto& vec = it->second.slots;  // <-- novo
+    spdlog::info("[InjectHUD] RemoveFor id={:08X} slots={}", id, vec.size());
+    for (int slot = 0; slot < (int)vec.size(); ++slot) {
+        if (!vec[slot]) continue;
         const auto wid = MakeWidgetID(id, slot);
         g_trueHUD->RemoveWidget(g_pluginHandle, ERF_WIDGET_TYPE, wid, TRUEHUD_API::WidgetRemovalMode::Immediate);
     }
     widgets.erase(it);
-    combos.erase(id);  // limpa reações ativas desse ator
+    combos.erase(id);
     return true;
 }
 
@@ -616,7 +621,8 @@ void InjectHUD::RemoveAllWidgets() {
         return;
     }
 
-    for (const auto& [id, vec] : widgets) {
+    for (const auto& [id, entry] : widgets) {
+        const auto& vec = entry.slots;
         for (int slot = 0; slot < (int)vec.size(); ++slot) {
             if (!vec[slot]) continue;
             const auto wid = MakeWidgetID(id, slot);
