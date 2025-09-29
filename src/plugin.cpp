@@ -10,6 +10,7 @@
 #include "elemental_reactions/ElementalGaugesHook.h"
 #include "elemental_reactions/ElementalStates.h"
 #include "elemental_reactions/erf_element.h"
+#include "elemental_reactions/erf_preeffect.h"
 #include "elemental_reactions/erf_reaction.h"
 #include "elemental_reactions/erf_state.h"
 #include "hud/InjectHUD.h"
@@ -25,6 +26,41 @@
 using namespace SKSE;
 using namespace RE;
 using RR = ReactionRegistry;
+
+namespace {
+    static std::unordered_map<RE::FormID, float> g_lastShockSlow;
+
+    static void ApplyShockSlow(RE::Actor* actor, ERF_ElementHandle, std::uint8_t, float intensity, void*) {
+        if (!actor) return;
+
+        using AVM = RE::ACTOR_VALUE_MODIFIER;
+        using AV = RE::ActorValue;
+
+        const RE::FormID id = actor->GetFormID();
+        const float prev = g_lastShockSlow.count(id) ? g_lastShockSlow[id] : 0.0f;
+
+        const float newPenalty = std::clamp(intensity, 0.0f, 1.0f) * 100.0f;
+        const float delta = newPenalty - prev;
+
+        if (std::fabs(delta) > 1e-3f) {
+            // Obtenha o ponteiro para ActorValueOwner
+            auto avOwner = actor->AsActorValueOwner();
+
+            // Pega o valor atual e aplica o delta negativo como um override
+            float current = avOwner->GetActorValue(AV::kSpeedMult);
+            float updated = current - delta;
+
+            // Aplica o novo valor via override
+            avOwner->SetActorValue(AV::kSpeedMult, updated);
+
+            g_lastShockSlow[id] = newPenalty;
+        }
+
+        if (newPenalty <= 0.0f) {
+            g_lastShockSlow.erase(id);
+        }
+    }
+}
 
 namespace {
     static std::optional<ERF_ElementHandle> E(std::string_view name) { return ElementRegistry::get().findByName(name); }
@@ -267,6 +303,39 @@ namespace {
 
         spdlog::info("[ERF] State multipliers linked to elements.");
     }
+
+    static void RegisterPreEffects() {
+        auto shock = ElementRegistry::get().findByName("Shock");
+        if (!shock) {
+            spdlog::error("[ERF] RegisterPreEffects: elemento 'Shock' ausente");
+            return;
+        }
+
+        // Queremos: ativar a partir de 50 e escalar com o gauge.
+        // Curva: 10% de slow em 50 pontos, +1% por ponto acima de 50, cap em 60%.
+        //  => intensidade(50) = 0.10; intensidade(100) = min(0.10 + 0.01*50, 0.60) = 0.60
+        ERF_PreEffectDesc slow{};
+        slow.name = "Shock_Slow_50p";
+        slow.element = *shock;
+        slow.minGauge = 50;
+
+        // contínuo: não precisamos de cooldown; duração 0 indica que não gerenciamos expiração aqui
+        slow.durationSeconds = 0.0f;
+        slow.durationIsRealTime = true;
+        slow.cooldownSeconds = 0.0f;
+        slow.cooldownIsRealTime = true;
+
+        slow.baseIntensity = 0.10f;  // 10% na borda do limiar (50)
+        slow.scalePerPoint = 0.01f;  // +1% por ponto acima de 50
+        slow.minIntensity = 0.0f;
+        slow.maxIntensity = 0.60f;  // 60% máx
+
+        slow.cb = &ApplyShockSlow;
+        slow.user = nullptr;
+
+        PreEffectRegistry::get().registerPreEffect(slow);
+        spdlog::info("[ERF] PreEffect registrado: {} (elem=Shock, minGauge=50)", slow.name);
+    }
 }
 
 namespace {
@@ -295,6 +364,8 @@ namespace {
                 spdlog::info("Efeitos elementais registrados.");
                 RegisterDefaultStatesAndMultipliers();
                 spdlog::info("Estados elementais registrados");
+                RegisterPreEffects();
+                spdlog::info("Pré-efeitos registrados.");
                 ElementalGaugesHook::InitCarrierRefs();
                 ElementalGaugesHook::Install();
                 ElementalGaugesHook::RegisterAEEventSink();
