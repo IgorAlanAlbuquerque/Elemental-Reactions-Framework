@@ -36,6 +36,7 @@ add_commonlibsse_plugin(ElementalReactionsFramework
     src/elemental_reactions/erf_element.cpp
     src/elemental_reactions/erf_reaction.cpp
     src/elemental_reactions/erf_state.cpp
+    src/elemental_reactions/erf_preeffect.cpp
 )
 
 target_include_directories(ElementalReactionsFramework PRIVATE ${truehud_SOURCE_DIR}/src)
@@ -56,6 +57,7 @@ target_precompile_headers(ElementalReactionsFramework PRIVATE
   src/elemental_reactions/erf_element.h
   src/elemental_reactions/erf_reaction.h
   src/elemental_reactions/erf_state.h
+  src/elemental_reactions/erf_preeffect.h
 )
 
 if(DEFINED OUTPUT_FOLDER)

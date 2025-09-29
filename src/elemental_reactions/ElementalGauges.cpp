@@ -17,13 +17,14 @@
 #include "../common/PluginSerialization.h"
 #include "../hud/InjectHUD.h"
 #include "ElementalStates.h"
+#include "erf_preeffect.h"
 
 using namespace ElementalGaugesDecay;
 using Elem = ERF_ElementHandle;
 
 namespace Gauges {
     inline constexpr std::uint32_t kRecordID = FOURCC('G', 'A', 'U', 'V');
-    inline constexpr std::uint32_t kVersion = 3;
+    inline constexpr std::uint32_t kVersion = 4;
     inline constexpr float increaseMult = 1.30f;
     inline constexpr float decreaseMult = 0.10f;
     constexpr bool kReserveZero = true;
@@ -38,6 +39,10 @@ namespace Gauges {
         std::unordered_map<ERF_ReactionHandle, double> reactBlockUntilRtS;
         std::unordered_map<ERF_ReactionHandle, float> reactBlockUntilH;
         std::unordered_map<ERF_ReactionHandle, std::uint8_t> inReaction;
+        std::unordered_set<ERF_PreEffectHandle> preActive;
+        std::unordered_map<ERF_PreEffectHandle, float> preLastIntensity;
+        std::unordered_map<ERF_PreEffectHandle, double> preExpireRtS;
+        std::unordered_map<ERF_PreEffectHandle, float> preExpireH;
     };
 
     using Map = std::unordered_map<RE::FormID, Entry>;
@@ -230,6 +235,112 @@ namespace {
         }
 
         return true;
+    }
+
+    static bool MaybeTriggerPreEffectsFor(RE::Actor* a, Gauges::Entry& e, ERF_ElementHandle elem,
+                                          std::uint8_t gaugeNow) {
+        if (!a || elem == 0) return false;
+
+        auto list = PreEffectRegistry::get().listByElement(elem);
+        if (list.empty()) return false;
+
+        const double nowRt = NowRealSeconds();
+        const float nowH = NowHours();
+
+        bool any = false;
+
+        for (auto ph : list) {
+            const auto* pd = PreEffectRegistry::get().get(ph);
+            if (!pd || pd->element != elem) continue;
+
+            const bool above = gaugeNow >= pd->minGauge;
+
+            // Se caiu abaixo do limiar e estava ativo: remover
+            if (!above) {
+                if (e.preActive.erase(ph) > 0) {
+                    e.preLastIntensity.erase(ph);
+                    e.preExpireRtS.erase(ph);
+                    e.preExpireH.erase(ph);
+                    if (pd->cb) {
+                        // Convencione: intensidade 0 => remover/dispell
+                        pd->cb(a, elem, gaugeNow, 0.0f, pd->user);
+                    }
+                    any = true;
+                }
+                continue;
+            }
+
+            // Calcula intensidade pela regra do descriptor
+            float intensity = pd->baseIntensity + pd->scalePerPoint * static_cast<float>(gaugeNow - pd->minGauge);
+            if (intensity < pd->minIntensity) intensity = pd->minIntensity;
+            if (intensity > pd->maxIntensity) intensity = pd->maxIntensity;
+
+            // Decidir se precisa aplicar/atualizar
+            bool needApply = false;
+
+            // 1) nunca esteve ativo
+            if (!e.preActive.count(ph)) {
+                needApply = true;
+            } else {
+                // 2) mudou materialmente a intensidade
+                auto it = e.preLastIntensity.find(ph);
+                const float last = (it != e.preLastIntensity.end()) ? it->second : -9999.0f;
+                if (std::abs(last - intensity) > 1e-3f) {
+                    needApply = true;
+                }
+
+                // 3) vai expirar logo (caso você use duração finita no Apply)
+                if (!needApply && pd->durationSeconds > 0.0f) {
+                    const double marginRt = 0.20;  // renova 0.2s antes
+                    const float marginH = 0.20f / 3600.0f;
+                    if (pd->durationIsRealTime) {
+                        auto ex = e.preExpireRtS.find(ph);
+                        if (ex != e.preExpireRtS.end() && nowRt + marginRt >= ex->second) needApply = true;
+                    } else {
+                        auto ex = e.preExpireH.find(ph);
+                        if (ex != e.preExpireH.end() && nowH + marginH >= ex->second) needApply = true;
+                    }
+                }
+            }
+
+            if (!needApply) continue;
+
+            // Aplica/atualiza o efeito contínuo
+            if (pd->cb) {
+                if (auto* tasks = SKSE::GetTaskInterface()) {
+                    RE::ActorHandle h = a->CreateRefHandle();
+                    auto cb = pd->cb;
+                    auto user = pd->user;
+                    const auto passElem = elem;
+                    const auto passGauge = gaugeNow;
+                    const auto passIntensity = intensity;
+                    tasks->AddTask([h, cb, user, passElem, passGauge, passIntensity]() {
+                        if (auto actorPtr = h.get().get()) {
+                            cb(actorPtr, passElem, passGauge, passIntensity, user);
+                        }
+                    });
+                } else {
+                    pd->cb(a, elem, gaugeNow, intensity, pd->user);
+                }
+            }
+
+            // Marca ativo e renova “expiração” se você usa duração no Apply
+            e.preActive.insert(ph);
+            e.preLastIntensity[ph] = intensity;
+
+            if (pd->durationSeconds > 0.0f) {
+                if (pd->durationIsRealTime) {
+                    e.preExpireRtS[ph] = std::max(e.preExpireRtS[ph], nowRt + pd->durationSeconds);
+                } else {
+                    e.preExpireH[ph] =
+                        std::max(e.preExpireH[ph], nowH + static_cast<float>(pd->durationSeconds / 3600.0));
+                }
+            }
+
+            any = true;
+        }
+
+        return any;
     }
 }
 
@@ -437,6 +548,7 @@ void ElementalGauges::Add(RE::Actor* a, ERF_ElementHandle elem, int delta) {
         e.lastHitH[i] = nowH;
         e.lastEvalH[i] = nowH;
 
+        (void)MaybeTriggerPreEffectsFor(a, e, elem, static_cast<std::uint8_t>(afterI));
         const int sumAfter = SumAll(e);
         if (sumBefore < 100 && sumAfter >= 100 && (MaybeTriggerReaction(a, e))) return;
     }
