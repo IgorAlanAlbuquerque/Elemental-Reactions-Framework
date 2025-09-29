@@ -37,9 +37,11 @@ add_commonlibsse_plugin(ElementalReactionsFramework
     src/elemental_reactions/erf_reaction.cpp
     src/elemental_reactions/erf_state.cpp
     src/elemental_reactions/erf_preeffect.cpp
+    src/ModAPI.cpp
 )
 
-target_include_directories(ElementalReactionsFramework PRIVATE ${truehud_SOURCE_DIR}/src)
+target_include_directories(ElementalReactionsFramework PRIVATE ${truehud_SOURCE_DIR}/src PUBLIC PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src )
 
 target_compile_features(ElementalReactionsFramework PRIVATE cxx_std_23)
 
@@ -58,6 +60,7 @@ target_precompile_headers(ElementalReactionsFramework PRIVATE
   src/elemental_reactions/erf_reaction.h
   src/elemental_reactions/erf_state.h
   src/elemental_reactions/erf_preeffect.h
+  src/ModAPI.h
 )
 
 if(DEFINED OUTPUT_FOLDER)
@@ -72,4 +75,30 @@ if(DEFINED OUTPUT_FOLDER)
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:${PROJECT_NAME}>" "${DLL_FOLDER}/$<TARGET_FILE_NAME:${PROJECT_NAME}>"
         VERBATIM
     )
+endif()
+
+# === SEGUNDO PLUGIN: ERF-Test (gera outra DLL a partir de src/test.cpp) ===
+add_commonlibsse_plugin(ERFTest
+  SOURCES
+    src/teste.cpp
+)
+
+target_include_directories(ERFTest
+  PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/src  # para incluir ElementalReactionsAPI.h
+)
+
+target_compile_features(ERFTest PRIVATE cxx_std_23)
+
+target_precompile_headers(ERFTest PRIVATE src/PCH.h)
+
+if(DEFINED OUTPUT_FOLDER)
+  set(TEST_DLL_FOLDER "${OUTPUT_FOLDER}/SKSE/Plugins")               # mesmo mod
+
+  message(STATUS "ERFTest output folder: ${TEST_DLL_FOLDER}")
+  add_custom_command(TARGET ERFTest POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${TEST_DLL_FOLDER}"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "$<TARGET_FILE:ERFTest>"
+            "${TEST_DLL_FOLDER}/$<TARGET_FILE_NAME:ERFTest>"
+  )
 endif()

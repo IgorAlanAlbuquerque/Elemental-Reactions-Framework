@@ -222,16 +222,22 @@ namespace {
         InjectHUD::BeginReaction(a, rh, durS, durIsRT);
 
         if (r->cb && a) {
-            if (auto* tasks = SKSE::GetTaskInterface()) {
-                RE::ActorHandle h = a->CreateRefHandle();
-                auto cb = r->cb;
-                void* user = r->user;
-                tasks->AddTask([h, cb, user]() {
-                    if (auto actor = h.get().get()) cb(actor, user);
-                });
-            } else {
-                r->cb(a, r->user);
+            auto* tasks = SKSE::GetTaskInterface();
+            if (!tasks) {
+                spdlog::warn("[ERF] TaskInterface indisponível; reação '{}' não disparada.", r->name);
+                return true;
             }
+            RE::ActorHandle h = a->CreateRefHandle();
+            auto cb = r->cb;
+            void* user = r->user;
+
+            tasks->AddTask([h, cb, user]() {
+                if (auto actorNi = h.get(); actorNi) {
+                    ERF_ReactionContext ctx{};
+                    ctx.target = actorNi.get();
+                    cb(ctx, user);
+                }
+            });
         }
 
         return true;
@@ -255,14 +261,12 @@ namespace {
 
             const bool above = gaugeNow >= pd->minGauge;
 
-            // Se caiu abaixo do limiar e estava ativo: remover
             if (!above) {
                 if (e.preActive.erase(ph) > 0) {
                     e.preLastIntensity.erase(ph);
                     e.preExpireRtS.erase(ph);
                     e.preExpireH.erase(ph);
                     if (pd->cb) {
-                        // Convencione: intensidade 0 => remover/dispell
                         pd->cb(a, elem, gaugeNow, 0.0f, pd->user);
                     }
                     any = true;
@@ -270,28 +274,23 @@ namespace {
                 continue;
             }
 
-            // Calcula intensidade pela regra do descriptor
             float intensity = pd->baseIntensity + pd->scalePerPoint * static_cast<float>(gaugeNow - pd->minGauge);
             if (intensity < pd->minIntensity) intensity = pd->minIntensity;
             if (intensity > pd->maxIntensity) intensity = pd->maxIntensity;
 
-            // Decidir se precisa aplicar/atualizar
             bool needApply = false;
 
-            // 1) nunca esteve ativo
             if (!e.preActive.count(ph)) {
                 needApply = true;
             } else {
-                // 2) mudou materialmente a intensidade
                 auto it = e.preLastIntensity.find(ph);
                 const float last = (it != e.preLastIntensity.end()) ? it->second : -9999.0f;
                 if (std::abs(last - intensity) > 1e-3f) {
                     needApply = true;
                 }
 
-                // 3) vai expirar logo (caso você use duração finita no Apply)
                 if (!needApply && pd->durationSeconds > 0.0f) {
-                    const double marginRt = 0.20;  // renova 0.2s antes
+                    const double marginRt = 0.20;
                     const float marginH = 0.20f / 3600.0f;
                     if (pd->durationIsRealTime) {
                         auto ex = e.preExpireRtS.find(ph);
@@ -305,7 +304,6 @@ namespace {
 
             if (!needApply) continue;
 
-            // Aplica/atualiza o efeito contínuo
             if (pd->cb) {
                 if (auto* tasks = SKSE::GetTaskInterface()) {
                     RE::ActorHandle h = a->CreateRefHandle();
@@ -324,7 +322,6 @@ namespace {
                 }
             }
 
-            // Marca ativo e renova “expiração” se você usa duração no Apply
             e.preActive.insert(ph);
             e.preLastIntensity[ph] = intensity;
 
@@ -407,7 +404,6 @@ namespace {
         return true;
     }
 
-    // ======== LOAD ========
     bool Load(SKSE::SerializationInterface* ser, std::uint32_t version, std::uint32_t) {
         if (version > Gauges::kVersion) return false;
         auto& m = Gauges::state();
@@ -548,9 +544,8 @@ void ElementalGauges::Add(RE::Actor* a, ERF_ElementHandle elem, int delta) {
         e.lastHitH[i] = nowH;
         e.lastEvalH[i] = nowH;
 
+        if (const int sumAfter = SumAll(e); sumBefore < 100 && sumAfter >= 100) MaybeTriggerReaction(a, e);
         (void)MaybeTriggerPreEffectsFor(a, e, elem, static_cast<std::uint8_t>(afterI));
-        const int sumAfter = SumAll(e);
-        if (sumBefore < 100 && sumAfter >= 100 && (MaybeTriggerReaction(a, e))) return;
     }
 }
 
@@ -666,7 +661,6 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudIconDecay
     HudGaugeBundle bundle{};
     auto& R = ElementRegistry::get();
 
-    // monta valores/cores para o anel
     for (std::size_t i = Gauges::firstIndex(); i < e.v.size(); ++i) {
         const std::uint8_t v = e.v[i];
         bundle.values.push_back(static_cast<std::uint32_t>(v));
@@ -715,7 +709,6 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudIconDecay
         return std::nullopt;
     }
 
-    // Escolhe melhor reação para sugerir ícone no HUD
     std::vector<std::uint8_t> totals8;
     totals8.reserve(e.v.size() - Gauges::firstIndex());
     std::vector<ERF_ElementHandle> present;
@@ -731,7 +724,7 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudIconDecay
     if (auto rh = RR.pickBestForHud(totals8, present)) {
         if (const ERF_ReactionDesc* rd = RR.get(*rh)) {
             if (!rd->hud.iconPath.empty()) {
-                bundle.iconPath = rd->hud.iconPath;  // << só path
+                bundle.iconPath = rd->hud.iconPath;
                 bundle.iconTint = rd->hud.iconTint;
                 return bundle;
             }

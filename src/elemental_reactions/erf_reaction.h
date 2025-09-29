@@ -7,6 +7,10 @@
 
 using ERF_ReactionHandle = std::uint16_t;
 
+struct ERF_ReactionContext;
+
+using ERF_ReactionCallback = void (*)(const ERF_ReactionContext& ctx, void* user);
+
 struct ERF_ReactionHudIcon {
     std::string iconPath;
     std::uint32_t iconTint = 0xFFFFFF;
@@ -14,25 +18,21 @@ struct ERF_ReactionHudIcon {
 
 struct ERF_ReactionDesc {
     std::string name;
-
     std::vector<ERF_ElementHandle> elements;
     bool ordered = false;
-
     std::uint32_t minTotalGauge = 100;
     float minPctEach = 0.0f;
-
-    float cooldownSeconds = 0.5f;
+    float minSumSelected = 0.0f;
+    float cooldownSeconds = 0.0f;
     bool cooldownIsRealTime = true;
     float elementLockoutSeconds = 0.0f;
     bool elementLockoutIsRealTime = true;
     bool clearAllOnTrigger = true;
-    float minSumSelected = 0.0f;
-
-    using Callback = void (*)(RE::Actor* actor, void* user);
-    Callback cb = nullptr;
-    void* user = nullptr;
 
     ERF_ReactionHudIcon hud{};
+
+    ERF_ReactionCallback cb = nullptr;
+    void* user = nullptr;
 };
 
 class ReactionRegistry {

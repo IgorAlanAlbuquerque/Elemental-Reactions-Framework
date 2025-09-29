@@ -41,7 +41,6 @@ namespace SerFunctions {
 }
 
 namespace Ser {
-
     void Register(const Handler& h) { SerFunctions::registry().push_back(h); }
 
     void Install(std::uint32_t uniqueID) {

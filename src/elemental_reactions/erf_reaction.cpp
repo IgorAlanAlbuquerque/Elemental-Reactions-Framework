@@ -6,19 +6,17 @@
 
 ReactionRegistry& ReactionRegistry::get() {
     static ReactionRegistry R;
-    // garante slot 0 reservado
     if (R._reactions.empty()) {
-        R._reactions.resize(1);  // handle 0 = inválido
+        R._reactions.resize(1);
     }
     return R;
 }
 
 ERF_ReactionHandle ReactionRegistry::registerReaction(const ERF_ReactionDesc& d) {
     auto& R = get();
-    // garante que o [0] siga reservado
     if (R._reactions.empty()) R._reactions.resize(1);
 
-    R._reactions.push_back(d);  // cópia
+    R._reactions.push_back(d);
     const auto h = static_cast<ERF_ReactionHandle>(R._reactions.size() - 1);
     return h;
 }
@@ -28,13 +26,9 @@ const ERF_ReactionDesc* ReactionRegistry::get(ERF_ReactionHandle h) const {
     return &_reactions[h];
 }
 
-std::size_t ReactionRegistry::size() const noexcept {
-    // não conta o slot 0 reservado
-    return (_reactions.size() > 0) ? (_reactions.size() - 1) : 0;
-}
+std::size_t ReactionRegistry::size() const noexcept { return (_reactions.size() > 0) ? (_reactions.size() - 1) : 0; }
 
 namespace {
-    // totals vem “compactado”: índice 0 => handle 1
     inline std::uint8_t valueForHandle(const std::vector<std::uint8_t>& totals, ERF_ElementHandle h) {
         if (h == 0) return 0;
         const std::size_t idx = static_cast<std::size_t>(h - 1);
