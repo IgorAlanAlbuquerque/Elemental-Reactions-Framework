@@ -41,11 +41,10 @@ std::optional<ERF_ElementHandle> ElementRegistry::findByKeyword(const RE::BGSKey
     const auto want = kw->GetFormID();
     const auto n = static_cast<ERF_ElementHandle>(this->size());
 
-    // Se você reserva o handle 0, comece em 1
     for (ERF_ElementHandle h = 1; h <= n; ++h) {
         const ERF_ElementDesc* d = this->get(h);
         if (d && d->keyword && d->keyword->GetFormID() == want) {
-            return h;  // <-- AQUI é a “linha” que você citou, no if
+            return h;
         }
     }
     return std::nullopt;

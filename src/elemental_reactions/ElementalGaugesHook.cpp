@@ -26,7 +26,6 @@ namespace GaugesHook {
     static std::unordered_map<std::uint64_t, double> g_lastAccHint;
     static std::shared_mutex g_accHintMx;
 
-    // -------- helpers --------
     static std::uint64_t KeyActorOnly(const RE::Actor* a) { return static_cast<std::uint64_t>(a ? a->GetFormID() : 0); }
 
     static RE::BGSKeyword* LookupKW(const char* edid, std::uint32_t formID = 0) {
@@ -83,7 +82,6 @@ namespace GaugesHook {
         return std::nullopt;
     }
 
-    // -------- contexto por ActiveEffect --------
     struct EffCtx {
         RE::ActorHandle target;
         Elem elem;
@@ -101,7 +99,6 @@ namespace GaugesHook {
         return (hi << 32) | lo;
     }
 
-    // -------- EVENTO: limpeza (remove ctx por UID e limpa acumulador do alvo) --------
     class AEApplyRemoveSink final : public RE::BSTEventSink<RE::TESActiveEffectApplyRemoveEvent> {
     public:
         static AEApplyRemoveSink* GetSingleton() {
@@ -133,7 +130,7 @@ namespace GaugesHook {
                     const auto key = KeyActorOnly(tgt);
                     {
                         std::unique_lock lk(g_accHintMx);
-                        g_lastAccHint.erase(key);  // << limpa o hint ao remover efeitos
+                        g_lastAccHint.erase(key);
                     }
                 }
             }
@@ -148,10 +145,9 @@ namespace GaugesHook {
         }
     }
 
-    // -------- HOOKS --------
     template <class T>
     struct StartHook {
-        static constexpr std::size_t kIndex = 0x14;  // Start
+        static constexpr std::size_t kIndex = 0x14;
         using Fn = void(T*, RE::MagicTarget*);
         static inline Fn* _orig{};
 
@@ -165,7 +161,6 @@ namespace GaugesHook {
         static void thunk(T* self, RE::MagicTarget* mt) {
             _orig(self, mt);
 
-            // --- pegue os objetos com tipos corretos ---
             const RE::EffectSetting* mgef = self ? self->GetBaseObject() : nullptr;
 
             RE::Actor* actor = AsActor(self ? self->target : nullptr);
@@ -215,7 +210,7 @@ namespace GaugesHook {
 
     template <class T>
     struct UpdateHook {
-        static constexpr std::size_t kIndex = 0x04;  // Update
+        static constexpr std::size_t kIndex = 0x04;
         using Fn = void(T*, float);
         static inline Fn* _orig{};
 
