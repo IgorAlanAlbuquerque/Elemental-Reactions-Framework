@@ -15,19 +15,25 @@
     #define DLLEXPORT __declspec(dllexport)
 #endif
 
+// === config de teste ===
+// Se você estiver testando a ERF sozinho, pode forçar o freeze imediato após EndBatchRegistration.
+// DESATIVE em builds “reais” para não atropelar outros consumidores.
+#define FORCE_FREEZE_AFTER_END 0
+
 // -------------------- Guarda da API --------------------
 static ERF_API_V1* g_erf = nullptr;
 
 static ERF_API_V1* AcquireERF() {
     if (g_erf) return g_erf;
 
-    g_erf = ERF_GetAPI();  // <<< NOVO: padrão TrueHUD (GetProcAddress)
+    g_erf = ERF_GetAPI(ERF_API_VERSION);  // v1 estendida
     if (!g_erf) {
         spdlog::warn("[ERF-Test] ERF API v{} ainda não disponível", ERF_API_VERSION);
         return nullptr;
     }
-
-    spdlog::info("[ERF-Test] ERF API v{} adquirida", g_erf->version);
+    spdlog::info("[ERF-Test] ERF API v{} adquirida (open={}, frozen={})", g_erf->version,
+                 g_erf->IsRegistrationOpen ? g_erf->IsRegistrationOpen() : -1,
+                 g_erf->IsFrozen ? g_erf->IsFrozen() : -1);
     return g_erf;
 }
 
@@ -66,7 +72,7 @@ static void ApplyShockSlow(RE::Actor* actor, ERF_ElementHandle /*element*/, std:
 }
 
 // -------------------- Registro via API --------------------
-static void RegisterEverything() {
+static void RegisterEverything_Core() {
     auto* api = AcquireERF();
     if (!api) return;
 
@@ -106,7 +112,6 @@ static void RegisterEverything() {
         ERF_StateDesc_Public s{"Fur", 0};
         fur = api->RegisterState(s);
     }
-
     spdlog::info("[ERF-Test] States -> Wet={} Rubber={} Fur={}", wet, rubber, fur);
 
     // 3) Multiplicadores estado×elemento
@@ -175,18 +180,53 @@ static void RegisterEverything() {
     spdlog::info("[ERF-Test] Registro concluído.");
 }
 
+// Envolve o registro com a JANELA/BARREIRA
+static void RegisterEverything_WithWindow() {
+    auto* api = AcquireERF();
+    if (!api) return;
+
+    // (Opcional) — configure um timeout menor p/ laboratório
+    // if (api->SetFreezeTimeoutMs) api->SetFreezeTimeoutMs(1500);
+
+    bool usedBarrier = false;
+    if (api->BeginBatchRegistration) {
+        usedBarrier = api->BeginBatchRegistration();
+    }
+
+    if (!usedBarrier) {
+        // Se a janela já fechou, registrar agora vai falhar (provider recusa pós-freeze).
+        // Tente pelo menos logar o estado pra diagnosticar.
+        const int open = api->IsRegistrationOpen ? (api->IsRegistrationOpen() ? 1 : 0) : -1;
+        const int froz = api->IsFrozen ? (api->IsFrozen() ? 1 : 0) : -1;
+        spdlog::warn("[ERF-Test] BeginBatchRegistration falhou (open={}, frozen={}) — tentando registrar assim mesmo.",
+                     open, froz);
+    }
+
+    RegisterEverything_Core();
+
+    if (usedBarrier && api->EndBatchRegistration) {
+        api->EndBatchRegistration();
+        spdlog::info("[ERF-Test] EndBatchRegistration chamado.");
+
+#if FORCE_FREEZE_AFTER_END
+        if (api->FreezeNow) {
+            spdlog::warn("[ERF-Test] FORCE_FREEZE_AFTER_END=1 → FreezeNow()");
+            api->FreezeNow();
+        }
+#endif
+    }
+}
+
 // -------------------- Mensageria SKSE (apenas ciclo de vida) --------------------
 static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg) {
     if (!msg) return;
 
     if (msg->type == SKSE::MessagingInterface::kPostLoad) {
-        // A DLL provider já está carregada — tentar pegar a API aqui
-        AcquireERF();
+        AcquireERF();  // tenta cedo
     }
     if (msg->type == SKSE::MessagingInterface::kDataLoaded) {
-        // Se ainda não pegou, tenta de novo e registra
         if (!g_erf) AcquireERF();
-        RegisterEverything();
+        RegisterEverything_WithWindow();
     }
 }
 

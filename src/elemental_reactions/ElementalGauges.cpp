@@ -44,6 +44,8 @@ namespace Gauges {
         std::unordered_map<ERF_PreEffectHandle, float> preLastIntensity;
         std::unordered_map<ERF_PreEffectHandle, double> preExpireRtS;
         std::unordered_map<ERF_PreEffectHandle, float> preExpireH;
+        std::vector<double> effMult;
+        bool effDirty = true;
     };
 
     using Map = std::unordered_map<RE::FormID, Entry>;
@@ -67,6 +69,8 @@ namespace Gauges {
             e.lastEvalH.resize(need, 0.f);
             e.blockUntilH.resize(need, 0.f);
             e.blockUntilRtS.resize(need, 0.0);
+            e.effMult.resize(need, 1.0);
+            e.effDirty = true;
         }
     }
 
@@ -113,26 +117,6 @@ namespace Gauges {
         for (std::size_t i = firstIndex(); i < n; ++i) {
             tickOne(e, i, nowH);
         }
-    }
-
-    static int AdjustByStates(RE::Actor* a, ERF_ElementHandle h, int delta) {
-        if (!a || delta <= 0) return delta;
-
-        const ERF_ElementDesc* ed = ElementRegistry::get().get(h);
-        if (!ed || ed->stateMultipliers.empty()) return delta;
-
-        double f = 1.0;
-
-        for (const auto& [sh, mult] : ed->stateMultipliers) {
-            if (sh == 0) continue;
-            if (ElementalStates::IsActive(a, sh)) {
-                f *= mult;
-            }
-        }
-
-        const double out = std::round(static_cast<double>(delta) * f);
-        if (out <= 0.0) return 0;
-        return static_cast<int>(out);
     }
 }
 
@@ -342,6 +326,39 @@ namespace {
 
         return any;
     }
+
+    inline void RecomputeEffMultipliers(RE::Actor* a, Gauges::Entry& e) {
+        using Elem = ERF_ElementHandle;
+        auto& ER = ElementRegistry::get();
+
+        const auto begin = Gauges::firstIndex();
+        const auto n = e.v.size();
+
+        // 1) zera p/ 1.0
+        if (e.effMult.size() < n) e.effMult.resize(n, 1.0);
+        std::fill(e.effMult.begin() + begin, e.effMult.begin() + n, 1.0);
+
+        // 2) pega estados ativos do ator
+        const auto active = ElementalStates::GetActive(a);  // API já existente
+        if (active.empty()) {
+            e.effDirty = false;
+            return;
+        }  // nada a aplicar
+
+        // 3) para cada elemento, aplica multiplicadores dos estados ativos
+        for (std::size_t i = begin; i < n; ++i) {
+            const Elem h = static_cast<Elem>(i);
+            if (const ERF_ElementDesc* ed = ER.get(h)) {
+                for (ERF_StateHandle sh : active) {
+                    if (sh == 0) continue;
+                    if (auto it = ed->stateMultipliers.find(sh); it != ed->stateMultipliers.end()) {
+                        e.effMult[i] *= static_cast<double>(it->second);
+                    }
+                }
+            }
+        }
+        e.effDirty = false;
+    }
 }
 
 namespace {
@@ -537,8 +554,15 @@ void ElementalGauges::Add(RE::Actor* a, ERF_ElementHandle elem, int delta) {
         return;
     }
 
+    if (e.effDirty) {
+        RecomputeEffMultipliers(a, e);
+    }
+
     const int before = (i < e.v.size()) ? e.v[i] : 0;
-    const int adj = Gauges::AdjustByStates(a, elem, delta);
+
+    const double scaled = std::round(static_cast<double>(delta) * ((i < e.effMult.size()) ? e.effMult[i] : 1.0));
+    const int adj = (scaled <= 0.0) ? 0 : static_cast<int>(scaled);
+
     const int afterI = std::clamp(before + adj, 0, 100);
 
     if (i < e.v.size()) {
@@ -731,7 +755,7 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudIconDecay
     }
 
     auto& RR = ReactionRegistry::get();
-    if (auto rh = RR.pickBestForHud(totals8, present)) {
+    if (auto rh = RR.pickBest(totals8, present)) {
         if (const ERF_ReactionDesc* rd = RR.get(*rh)) {
             if (!rd->hud.iconPath.empty()) {
                 bundle.iconPath = rd->hud.iconPath;
@@ -745,3 +769,10 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudIconDecay
 }
 
 void ElementalGauges::RegisterStore() { Ser::Register({Gauges::kRecordID, Gauges::kVersion, &Save, &Load, &Revert}); }
+
+void ElementalGauges::InvalidateStateMultipliers(RE::Actor* a) {
+    if (!a) return;
+    auto& e = Gauges::state()[a->GetFormID()];
+    Gauges::ensureSized(e);
+    e.effDirty = true;
+}

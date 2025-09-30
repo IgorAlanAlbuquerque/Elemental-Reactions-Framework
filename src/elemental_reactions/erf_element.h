@@ -38,6 +38,12 @@ public:
 
     std::size_t size() const;
 
+    void freeze();
+    bool isFrozen() const noexcept { return _frozen; }
+
 private:
+    bool _frozen = false;
     std::vector<ERF_ElementDesc> _elems;
+    std::unordered_map<std::string_view, ERF_ElementHandle> _nameIndex;
+    std::unordered_map<RE::FormID, ERF_ElementHandle> _kwIndex;
 };

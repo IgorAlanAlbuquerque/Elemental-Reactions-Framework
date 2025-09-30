@@ -6,6 +6,7 @@
 
 #include "../common/Helpers.h"
 #include "../common/PluginSerialization.h"
+#include "ElementalGauges.h"
 #include "erf_state.h"
 
 namespace {
@@ -115,8 +116,15 @@ bool ElementalStates::IsActive(RE::Actor* a, ERF_StateHandle sh) {
     return it->second.active.count(sh) > 0;
 }
 
-void ElementalStates::Activate(RE::Actor* a, ERF_StateHandle sh) { (void)SetActive(a, sh, true); }
-void ElementalStates::Deactivate(RE::Actor* a, ERF_StateHandle sh) { (void)SetActive(a, sh, false); }
+void ElementalStates::Activate(RE::Actor* a, ERF_StateHandle sh) {
+    (void)SetActive(a, sh, true);
+    ElementalGauges::InvalidateStateMultipliers(a);
+}
+
+void ElementalStates::Deactivate(RE::Actor* a, ERF_StateHandle sh) {
+    (void)SetActive(a, sh, false);
+    ElementalGauges::InvalidateStateMultipliers(a);
+}
 
 void ElementalStates::Clear(RE::Actor* a) {
     if (!a) return;

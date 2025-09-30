@@ -153,4 +153,10 @@ struct ERF_API_V1 {
 
     // 7) Desativar estado X para ator Y
     bool (*DeactivateState)(RE::Actor* actor, ERF_StateHandle state);
+    bool (*BeginBatchRegistration)();           // ++ barreira (opcional)
+    void (*EndBatchRegistration)();             // -- barreira
+    void (*SetFreezeTimeoutMs)(std::uint32_t);  // configurar timeout (ms)
+    bool (*IsRegistrationOpen)();               // janela ainda aberta?
+    bool (*IsFrozen)();                         // registries já selados?
+    void (*FreezeNow)();                        // força selagem (debug)
 };

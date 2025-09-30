@@ -43,6 +43,7 @@ namespace ElementalGauges {
     void RegisterStore();
     void ForEachDecayed(const std::function<void(RE::FormID, TotalsView)>& fn);
     std::optional<HudGaugeBundle> PickHudIconDecayed(RE::FormID id);
+    void InvalidateStateMultipliers(RE::Actor* a);
 }
 
 namespace ElementalGaugesDecay {

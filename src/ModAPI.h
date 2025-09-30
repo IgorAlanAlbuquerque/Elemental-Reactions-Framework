@@ -3,4 +3,5 @@
 
 namespace ERF::API {
     ERF_API_V1* Get();
+    void OpenRegistrationWindowAndScheduleFreeze();
 }
