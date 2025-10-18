@@ -15,14 +15,17 @@ struct ERF_ElementDesc {
     std::string name;
     std::uint32_t colorRGB;
     RE::BGSKeyword* keyword;
-    std::unordered_map<ERF_StateHandle, double> stateMultipliers;
+    std::vector<double> stateMultDense;
     void setMultiplierForState(ERF_StateHandle sh, double mult) {
-        if (sh != 0) stateMultipliers[sh] = mult;
+        if (sh == 0) return;
+        const std::size_t need = static_cast<std::size_t>(sh) + 1;
+        if (stateMultDense.size() < need) stateMultDense.resize(need, 1.0);
+        stateMultDense[sh] = mult;
     }
     double getMultiplierForState(ERF_StateHandle sh, double fallback = 1.0) const {
         if (sh == 0) return fallback;
-        if (auto it = stateMultipliers.find(sh); it != stateMultipliers.end()) return it->second;
-        return fallback;
+        const std::size_t i = static_cast<std::size_t>(sh);
+        return (i < stateMultDense.size()) ? stateMultDense[i] : fallback;
     }
 };
 

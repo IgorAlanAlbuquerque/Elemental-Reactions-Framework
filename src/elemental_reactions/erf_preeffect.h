@@ -40,7 +40,7 @@ public:
     ERF_PreEffectHandle registerPreEffect(const ERF_PreEffectDesc& d);
     const ERF_PreEffectDesc* get(ERF_PreEffectHandle h) const;
 
-    std::vector<ERF_PreEffectHandle> listByElement(ERF_ElementHandle h) const;
+    std::span<const ERF_PreEffectHandle> listByElement(ERF_ElementHandle h) const;
 
 private:
     PreEffectRegistry() = default;

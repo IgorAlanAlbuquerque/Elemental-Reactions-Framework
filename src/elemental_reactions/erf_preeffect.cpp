@@ -24,7 +24,8 @@ const ERF_PreEffectDesc* PreEffectRegistry::get(ERF_PreEffectHandle h) const {
     return &_effects[h];
 }
 
-std::vector<ERF_PreEffectHandle> PreEffectRegistry::listByElement(ERF_ElementHandle h) const {
+std::span<const ERF_PreEffectHandle> PreEffectRegistry::listByElement(ERF_ElementHandle h) const {
     if (h == 0 || h >= _byElem.size()) return {};
-    return _byElem[h];
+    const auto& v = _byElem[h];
+    return std::span<const ERF_PreEffectHandle>(v.data(), v.size());
 }

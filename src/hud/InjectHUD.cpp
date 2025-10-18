@@ -287,8 +287,8 @@ void InjectHUD::ERFWidget::FollowActorHead(RE::Actor* actor) {
     _lastY = py;
 }
 
-void InjectHUD::ERFWidget::SetIconAndGauge(const std::string& iconPath, const std::vector<std::uint32_t>& values,
-                                           const std::vector<std::uint32_t>& colors, std::uint32_t tintRGB) {
+void InjectHUD::ERFWidget::SetIconAndGauge(const std::string& iconPath, std::span<const std::uint32_t> values,
+                                           std::span<const std::uint32_t> colors, std::uint32_t tintRGB) {
     if (!_view) {
         spdlog::warn("[InjectHUD] SetIconAndGauge: _view=null slot={}", _slot);
         return;

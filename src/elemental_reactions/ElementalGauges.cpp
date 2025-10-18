@@ -122,6 +122,12 @@ namespace Gauges {
 
 namespace {
     thread_local std::vector<std::uint8_t> TL_totals;
+    thread_local std::vector<std::uint32_t> TL_vals32;
+    thread_local std::vector<std::uint32_t> TL_cols32;
+    thread_local std::vector<std::uint8_t> TL_totals8;
+    thread_local std::vector<ERF_ElementHandle> TL_present;
+
+    static std::vector<std::uint32_t> g_colorLUT;
 
     inline double NowRealSeconds() {
         using clock = std::chrono::steady_clock;
@@ -172,18 +178,21 @@ namespace {
     static bool MaybeTriggerReaction(RE::Actor* a, Gauges::Entry& e) {
         if (!a) return false;
 
-        std::vector<std::uint8_t> totals;
-        totals.reserve(e.v.size() - Gauges::firstIndex());
-        std::vector<ERF_ElementHandle> present;
+        const std::size_t begin = Gauges::firstIndex();
+        const std::size_t n = e.v.size();
+        const std::size_t count = (n > begin) ? (n - begin) : 0;
 
-        for (std::size_t i = Gauges::firstIndex(); i < e.v.size(); ++i) {
-            const auto v = e.v[i];
-            totals.push_back(static_cast<std::uint8_t>(std::clamp<int>(int(std::round(v)), 0, 100)));
-            if (v > 0) present.push_back(static_cast<ERF_ElementHandle>(i));
+        TL_totals8.resize(count);
+        TL_present.clear();
+        TL_present.reserve(count);
+        for (std::size_t i = begin, j = 0; i < n; ++i, ++j) {
+            const auto v = e.v[i];  // já 0..100 (uint8_t)
+            TL_totals8[j] = v;      // atribuição direta, sem push_back
+            if (v > 0) TL_present.push_back(static_cast<ERF_ElementHandle>(i));
         }
 
         auto& RR = ReactionRegistry::get();
-        auto rhOpt = RR.pickBest(totals, present);
+        auto rhOpt = RR.pickBest(TL_totals8, TL_present);
         if (!rhOpt) return false;
 
         const ERF_ReactionHandle rh = *rhOpt;
@@ -351,13 +360,18 @@ namespace {
             if (const ERF_ElementDesc* ed = ER.get(h)) {
                 for (ERF_StateHandle sh : active) {
                     if (sh == 0) continue;
-                    if (auto it = ed->stateMultipliers.find(sh); it != ed->stateMultipliers.end()) {
-                        e.effMult[i] *= static_cast<double>(it->second);
+                    const std::size_t si = static_cast<std::size_t>(sh);
+                    if (si < ed->stateMultDense.size()) {
+                        e.effMult[i] *= ed->stateMultDense[si];
                     }
                 }
             }
         }
         e.effDirty = false;
+    }
+
+    std::span<const std::uint32_t> GetColorLUT() {
+        return std::span<const std::uint32_t>(g_colorLUT.data(), g_colorLUT.size());
     }
 }
 
@@ -693,17 +707,20 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudIconDecay
     Gauges::tickAll(e, nowH);
 
     HudGaugeBundle bundle{};
-    auto& R = ElementRegistry::get();
+    const std::size_t begin = Gauges::firstIndex();
+    const std::size_t n = e.v.size();
+    const std::size_t count = (n > begin) ? (n - begin) : 0;
 
-    for (std::size_t i = Gauges::firstIndex(); i < e.v.size(); ++i) {
-        const std::uint8_t v = e.v[i];
-        bundle.values.push_back(static_cast<std::uint32_t>(v));
-        const ERF_ElementHandle h = static_cast<ERF_ElementHandle>(i);
-        if (const ERF_ElementDesc* d = R.get(h))
-            bundle.colors.push_back(d->colorRGB);
-        else
-            bundle.colors.push_back(0xFFFFFFu);
+    TL_vals32.resize(count);
+    TL_cols32.resize(count);
+
+    const auto colors = GetColorLUT();
+    for (std::size_t i = begin, j = 0; i < n; ++i, ++j) {
+        TL_vals32[j] = static_cast<std::uint32_t>(e.v[i]);
+        TL_cols32[j] = (i < colors.size()) ? colors[i] : 0xFFFFFFu;
     }
+    bundle.values = std::span<const std::uint32_t>(TL_vals32.data(), TL_vals32.size());
+    bundle.colors = std::span<const std::uint32_t>(TL_cols32.data(), TL_cols32.size());
 
     const bool anyVal = std::any_of(bundle.values.begin(), bundle.values.end(), [](std::uint32_t v) { return v > 0; });
 
@@ -743,19 +760,17 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudIconDecay
         return std::nullopt;
     }
 
-    std::vector<std::uint8_t> totals8;
-    totals8.reserve(e.v.size() - Gauges::firstIndex());
-    std::vector<ERF_ElementHandle> present;
-    present.reserve(e.v.size() - Gauges::firstIndex());
-
-    for (std::size_t i = Gauges::firstIndex(); i < e.v.size(); ++i) {
+    TL_totals8.resize(count);
+    TL_present.clear();
+    TL_present.reserve(count);
+    for (std::size_t i = Gauges::firstIndex(), j = 0; i < e.v.size(); ++i, ++j) {
         const auto v = e.v[i];
-        totals8.push_back(v);
-        if (v > 0) present.push_back(static_cast<ERF_ElementHandle>(i));
+        TL_totals8[j] = v;
+        if (v > 0) TL_present.push_back(static_cast<ERF_ElementHandle>(i));
     }
 
     auto& RR = ReactionRegistry::get();
-    if (auto rh = RR.pickBest(totals8, present)) {
+    if (auto rh = RR.pickBest(TL_totals8, TL_present)) {
         if (const ERF_ReactionDesc* rd = RR.get(*rh)) {
             if (!rd->hud.iconPath.empty()) {
                 bundle.iconPath = rd->hud.iconPath;
@@ -765,7 +780,7 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudIconDecay
         }
     }
 
-    return std::nullopt;
+    return bundle;
 }
 
 void ElementalGauges::RegisterStore() { Ser::Register({Gauges::kRecordID, Gauges::kVersion, &Save, &Load, &Revert}); }
@@ -775,4 +790,15 @@ void ElementalGauges::InvalidateStateMultipliers(RE::Actor* a) {
     auto& e = Gauges::state()[a->GetFormID()];
     Gauges::ensureSized(e);
     e.effDirty = true;
+}
+
+void ElementalGauges::BuildColorLUTOnce() {
+    auto& ER = ElementRegistry::get();
+    const std::size_t n = ER.size() + 1;  // respeitando o "slot zero" reservado
+    g_colorLUT.resize(n, 0xFFFFFFu);
+    for (std::size_t i = 1; i < n; ++i) {  // começa em 1
+        if (const ERF_ElementDesc* d = ER.get(static_cast<ERF_ElementHandle>(i))) {
+            g_colorLUT[i] = d->colorRGB;
+        }
+    }
 }

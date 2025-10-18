@@ -21,6 +21,7 @@ namespace {
         ElementRegistry::get().freeze();
         StateRegistry::get().freeze();
         ReactionRegistry::get().freeze();
+        ElementalGauges::BuildColorLUTOnce();
         spdlog::info("[ERF] Registries selados.");
     }
 }

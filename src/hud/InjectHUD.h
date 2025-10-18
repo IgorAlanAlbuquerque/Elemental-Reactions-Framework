@@ -87,8 +87,8 @@ namespace InjectHUD {
         void Dispose() override {}
 
         void FollowActorHead(RE::Actor* actor);
-        void SetIconAndGauge(const std::string& iconPath, const std::vector<uint32_t>& values,
-                             const std::vector<uint32_t>& colors, uint32_t tintRGB);
+        void SetIconAndGauge(const std::string& iconPath, std::span<const uint32_t> values,
+                             std::span<const uint32_t> colors, uint32_t tintRGB);
 
         void SetCombo(const std::string& iconPath, float remaining01, std::uint32_t tintRGB);
 

@@ -29,9 +29,10 @@ void ElementRegistry::freeze() {
     _kwIndex.reserve(_elems.size());
 
     // constrói índices a partir do armazenamento estável do vetor
+    const std::size_t cap = StateRegistry::get().size() + 1;
     for (ERF_ElementHandle h = 1; h <= static_cast<ERF_ElementHandle>(size()); ++h) {
-        const auto i = static_cast<std::size_t>(h);
-        auto& d = _elems[i];
+        auto& d = _elems[static_cast<std::size_t>(h)];
+        if (d.stateMultDense.size() < cap) d.stateMultDense.resize(cap, 1.0);
         if (!d.name.empty()) _nameIndex.emplace(std::string_view{d.name}, h);
         if (d.keyword) _kwIndex.emplace(d.keyword->GetFormID(), h);
     }
