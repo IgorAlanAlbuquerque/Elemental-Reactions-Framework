@@ -26,7 +26,7 @@ namespace {
     }
 }
 
-static ERF_ElementHandle API_RegisterElement(const ERF_ElementDesc_Public& d) {
+static ERF_ElementHandle API_RegisterElement(const ERF_ElementDesc_Public& d) noexcept {
     ERF_ElementDesc in{};
     in.name = d.name;
     in.colorRGB = d.colorRGB;
@@ -34,7 +34,7 @@ static ERF_ElementHandle API_RegisterElement(const ERF_ElementDesc_Public& d) {
     return ElementRegistry::get().registerElement(in);
 }
 
-static ERF_ReactionHandle API_RegisterReaction(const ERF_ReactionDesc_Public& d) {
+static ERF_ReactionHandle API_RegisterReaction(const ERF_ReactionDesc_Public& d) noexcept {
     ERF_ReactionDesc in{};
     in.name = d.name ? d.name : "";
 
@@ -62,7 +62,7 @@ static ERF_ReactionHandle API_RegisterReaction(const ERF_ReactionDesc_Public& d)
     return ReactionRegistry::get().registerReaction(in);
 }
 
-static ERF_PreEffectHandle API_RegisterPreEffect(const ERF_PreEffectDesc_Public& d) {
+static ERF_PreEffectHandle API_RegisterPreEffect(const ERF_PreEffectDesc_Public& d) noexcept {
     ERF_PreEffectDesc in{};
     in.name = d.name ? d.name : "";
     in.element = d.element;
@@ -82,37 +82,37 @@ static ERF_PreEffectHandle API_RegisterPreEffect(const ERF_PreEffectDesc_Public&
     return PreEffectRegistry::get().registerPreEffect(in);
 }
 
-static ERF_StateHandle API_RegisterState(const ERF_StateDesc_Public& d) {
+static ERF_StateHandle API_RegisterState(const ERF_StateDesc_Public& d) noexcept {
     ERF_StateDesc in{};
     in.name = d.name;
     in.keyword = d.keywordID ? RE::TESForm::LookupByID<RE::BGSKeyword>(d.keywordID) : nullptr;
     return StateRegistry::get().registerState(in);
 }
 
-static void API_SetElementStateMultiplier(ERF_ElementHandle elem, ERF_StateHandle state, double mult) {
+static void API_SetElementStateMultiplier(ERF_ElementHandle elem, ERF_StateHandle state, double mult) noexcept {
     if (auto* e = ElementRegistry::get().get(elem)) {
         const_cast<ERF_ElementDesc*>(e)->setMultiplierForState(state, mult);
     }
 }
 
-static bool API_ActivateState(RE::Actor* actor, ERF_StateHandle state) {
+static bool API_ActivateState(RE::Actor* actor, ERF_StateHandle state) noexcept {
     return ElementalStates::SetActive(actor, state, true);
 }
-static bool API_DeactivateState(RE::Actor* actor, ERF_StateHandle state) {
+static bool API_DeactivateState(RE::Actor* actor, ERF_StateHandle state) noexcept {
     return ElementalStates::SetActive(actor, state, false);
 }
 
 // Implementações usadas na API V1:
-static bool API_BeginBatchRegistration() {
+static bool API_BeginBatchRegistration() noexcept {
     if (!g_reg_open.load(std::memory_order_acquire)) return false;
     g_reg_barrier.fetch_add(1, std::memory_order_acq_rel);
     return true;
 }
-static void API_EndBatchRegistration() { g_reg_barrier.fetch_sub(1, std::memory_order_acq_rel); }
-static void API_SetFreezeTimeoutMs(std::uint32_t ms) { g_timeout_ms.store(ms, std::memory_order_release); }
-static bool API_IsRegistrationOpen() { return g_reg_open.load(std::memory_order_acquire); }
-static bool API_IsFrozen() { return g_frozen.load(std::memory_order_acquire); }
-static void API_FreezeNow() { FreezeRegistriesOnce(); }
+static void API_EndBatchRegistration() noexcept { g_reg_barrier.fetch_sub(1, std::memory_order_acq_rel); }
+static void API_SetFreezeTimeoutMs(std::uint32_t ms) noexcept { g_timeout_ms.store(ms, std::memory_order_release); }
+static bool API_IsRegistrationOpen() noexcept { return g_reg_open.load(std::memory_order_acquire); }
+static bool API_IsFrozen() noexcept { return g_frozen.load(std::memory_order_acquire); }
+static void API_FreezeNow() noexcept { FreezeRegistriesOnce(); }
 
 static ERF_API_V1 g_api = {ERF_API_VERSION,
                            &API_RegisterElement,

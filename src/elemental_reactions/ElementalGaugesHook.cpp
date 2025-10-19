@@ -12,6 +12,7 @@
 #include <type_traits>
 #include <unordered_map>
 
+#include "../common/Helpers.h"
 #include "../hud/HUDTick.h"
 #include "ElementalGauges.h"
 #include "RE/P/PeakValueModifierEffect.h"
@@ -117,12 +118,6 @@ namespace GaugesHook {
             }
         }
         return false;
-    }
-
-    static RE::Actor* AsActor(RE::MagicTarget* mt) noexcept {
-        if (!mt) return nullptr;
-        if (auto a = skyrim_cast<RE::Actor*>(mt)) return a;
-        return nullptr;
     }
 
     static std::optional<Elem> ClassifyElement(const RE::EffectSetting* mgef) {

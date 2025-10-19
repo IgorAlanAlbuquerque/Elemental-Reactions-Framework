@@ -6,4 +6,5 @@ namespace Utils {
     bool GetTorsoPos(RE::ActorPtr a_actor, RE::NiPoint3& point);
     bool GetBoundTopPos(RE::Actor* a, RE::NiPoint3& out);
     bool GetTargetPos(RE::ObjectRefHandle a_target, RE::NiPoint3& pos, bool bPreferBody);
+    bool GetHeadPosFast(RE::Actor* a, RE::NiPoint3& out);
 }

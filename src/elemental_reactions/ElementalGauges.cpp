@@ -185,14 +185,18 @@ namespace {
         TL_totals8.resize(count);
         TL_present.clear();
         TL_present.reserve(count);
+        int sumAll = 0;
         for (std::size_t i = begin, j = 0; i < n; ++i, ++j) {
             const auto v = e.v[i];  // já 0..100 (uint8_t)
             TL_totals8[j] = v;      // atribuição direta, sem push_back
+            sumAll += v;
             if (v > 0) TL_present.push_back(static_cast<ERF_ElementHandle>(i));
         }
+        if (sumAll <= 0) return false;
 
         auto& RR = ReactionRegistry::get();
-        auto rhOpt = RR.pickBest(TL_totals8, TL_present);
+        const float invSum = 1.0f / static_cast<float>(sumAll);
+        auto rhOpt = RR.pickBestFast(TL_totals8, TL_present, sumAll, invSum);
         if (!rhOpt) return false;
 
         const ERF_ReactionHandle rh = *rhOpt;
@@ -376,8 +380,12 @@ namespace {
 }
 
 namespace {
-    bool Save(SKSE::SerializationInterface* ser) {
+    static bool Save(SKSE::SerializationInterface* ser, bool dryRun) {
         const auto& m = Gauges::state();
+        if (dryRun) {
+            // só diz se há algo a salvar (evita abrir record vazio)
+            return !m.empty();
+        }
         const std::uint32_t count = static_cast<std::uint32_t>(m.size());
         if (!ser->WriteRecordData(&count, sizeof(count))) return false;
 
@@ -763,19 +771,24 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudIconDecay
     TL_totals8.resize(count);
     TL_present.clear();
     TL_present.reserve(count);
+    int sumAll = 0;
     for (std::size_t i = Gauges::firstIndex(), j = 0; i < e.v.size(); ++i, ++j) {
         const auto v = e.v[i];
         TL_totals8[j] = v;
+        sumAll += v;
         if (v > 0) TL_present.push_back(static_cast<ERF_ElementHandle>(i));
     }
 
-    auto& RR = ReactionRegistry::get();
-    if (auto rh = RR.pickBest(TL_totals8, TL_present)) {
-        if (const ERF_ReactionDesc* rd = RR.get(*rh)) {
-            if (!rd->hud.iconPath.empty()) {
-                bundle.iconPath = rd->hud.iconPath;
-                bundle.iconTint = rd->hud.iconTint;
-                return bundle;
+    if (sumAll > 0) {
+        auto& RR = ReactionRegistry::get();
+        const float invSum = 1.0f / static_cast<float>(sumAll);
+        if (auto rh = RR.pickBestFast(TL_totals8, TL_present, sumAll, invSum)) {
+            if (const ERF_ReactionDesc* rd = RR.get(*rh)) {
+                if (!rd->hud.iconPath.empty()) {
+                    bundle.iconPath = rd->hud.iconPath;
+                    bundle.iconTint = rd->hud.iconTint;
+                    return bundle;
+                }
             }
         }
     }

@@ -4,6 +4,7 @@
 #include <memory>
 #include <string_view>
 
+#include "../common/Helpers.h"
 #include "../elemental_reactions/ElementalGauges.h"
 #include "Offsets.h"
 #include "Utils.h"
@@ -127,7 +128,7 @@ namespace {
 
     static void RemoveAtSlot(std::vector<InjectHUD::WidgetPtr>& v, RE::FormID id, int slot) {
         if (slot < 0 || slot >= (int)v.size() || !v[slot]) return;
-        const auto wid = InjectHUD::MakeWidgetID(id, slot);
+        const auto wid = MakeWidgetID(id, slot);
         ::InjectHUD::g_trueHUD->RemoveWidget(::InjectHUD::g_pluginHandle, ERF_WIDGET_TYPE, wid,
                                              TRUEHUD_API::WidgetRemovalMode::Immediate);
         const int removedPos = v[slot]->_pos;
@@ -645,12 +646,4 @@ double InjectHUD::NowRtS() {
     using clock = std::chrono::steady_clock;
     static const auto t0 = clock::now();
     return std::chrono::duration<double>(clock::now() - t0).count();
-}
-
-std::uint32_t InjectHUD::MakeWidgetID(RE::FormID id, int slot) {
-    std::uint32_t x = static_cast<std::uint32_t>(id);
-    x ^= 0x9E3779B9u + (x << 6) + (x >> 2);
-    x ^= (static_cast<std::uint32_t>(slot) + 1u) * 0x85EBCA6Bu;
-    x ^= (x >> 16);
-    return x ? x : 0xA5A5A5A5u;
 }

@@ -23,7 +23,10 @@ namespace {
         constexpr std::uint32_t kVersion = 2;
     }
 
-    bool Save(SKSE::SerializationInterface* ser) {
+    bool Save(SKSE::SerializationInterface* ser, bool dryRun) {
+        if (dryRun) {
+            return !g_store.empty();  // só abre record se houver atores/estados
+        }
         const auto countActors = static_cast<std::uint32_t>(g_store.size());
         if (!ser->WriteRecordData(&countActors, sizeof(countActors))) return false;
 

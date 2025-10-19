@@ -22,12 +22,14 @@ struct ERF_ReactionHudIcon {
 struct ERF_ReactionDesc {
     std::string name;
     std::vector<ERF_ElementHandle> elements;
-    bool ordered = false;
+
     float minPctEach = 0.0f;
     float minSumSelected = 0.0f;
     float cooldownSeconds = 0.0f;
-    bool cooldownIsRealTime = true;
     float elementLockoutSeconds = 0.0f;
+
+    bool ordered = false;
+    bool cooldownIsRealTime = true;
     bool elementLockoutIsRealTime = true;
     bool clearAllOnTrigger = true;
 
@@ -42,8 +44,9 @@ public:
     static ReactionRegistry& get();
     ERF_ReactionHandle registerReaction(const ERF_ReactionDesc& d);
     const ERF_ReactionDesc* get(ERF_ReactionHandle h) const;
-    std::optional<ERF_ReactionHandle> pickBest(const std::vector<std::uint8_t>& totals,
-                                               const std::vector<ERF_ElementHandle>& present) const;
+    std::optional<ERF_ReactionHandle> pickBestFast(const std::vector<std::uint8_t>& totals,
+                                                   const std::vector<ERF_ElementHandle>& present, int sumAll,
+                                                   float invSumAll) const;
     std::size_t size() const noexcept;
     void freeze();
     bool isFrozen() const noexcept { return _indexed; }
@@ -65,4 +68,7 @@ private:
 
     void buildIndex_() const;
     static Mask makeMask_(const std::vector<ERF_ElementHandle>& elems);
+    static std::optional<ERF_ReactionHandle> pickBest_core(const std::vector<std::uint8_t>& totals,
+                                                           const std::vector<ERF_ElementHandle>& present,
+                                                           float invSumAll, const ReactionRegistry* self);
 };

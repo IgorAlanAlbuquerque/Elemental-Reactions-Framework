@@ -109,5 +109,4 @@ namespace InjectHUD {
     void OnTrueHUDClose();
     void OnUIFrameBegin();
     inline double NowRtS();
-    std::uint32_t MakeWidgetID(RE::FormID id, int slot);
 }
