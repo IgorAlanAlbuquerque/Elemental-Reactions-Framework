@@ -38,7 +38,7 @@ namespace InjectHUD {
     using WidgetPtr = std::shared_ptr<ERFWidget>;
     struct HUDEntry {
         RE::ActorHandle handle{};
-        std::vector<WidgetPtr> slots;
+        WidgetPtr widget;
     };
 
     constexpr auto ERF_SWF_PATH = "erfgauge/erfgauge.swf";
@@ -54,10 +54,8 @@ namespace InjectHUD {
 
     class ERFWidget : public TRUEHUD_API::WidgetBase {
     public:
-        explicit ERFWidget(int slot = 0) : _slot(slot) {}
+        explicit ERFWidget() = default;
 
-        int _slot{0};
-        int _pos = 0;
         bool _needsSnap = true;
 
         double _lastX{std::numeric_limits<double>::quiet_NaN()};
@@ -75,9 +73,6 @@ namespace InjectHUD {
         Smooth01 _shockDisp{};
         Smooth01 _comboDisp{};
 
-        static constexpr double kSlotSpacingPx = 30.0;
-        static constexpr double kTopOffsetPx = 0.0;
-
         static constexpr float kPlayerMarginLeftPx = 45.0f;
         static constexpr float kPlayerMarginBottomPx = 160.0f;
         static constexpr float kPlayerScale = 1.5f;
@@ -87,18 +82,12 @@ namespace InjectHUD {
         void Dispose() override {}
 
         void FollowActorHead(RE::Actor* actor);
-        void SetIconAndGauge(const std::string& iconPath, std::span<const uint32_t> values,
-                             std::span<const uint32_t> colors, uint32_t tintRGB);
-
-        void SetCombo(const std::string& iconPath, float remaining01, std::uint32_t tintRGB);
+        void SetAll(const std::vector<std::string>& comboIconPaths, const std::vector<double>& comboRemain01,
+                    const std::vector<std::uint32_t>& comboTintsRGB, const std::string& accumIconPath,
+                    const std::vector<double>& accumValues, const std::vector<std::uint32_t>& accumColorsRGB,
+                    std::uint32_t accumTintRGB);
 
         void ResetSmoothing() { _lastX = _lastY = std::numeric_limits<double>::quiet_NaN(); }
-        void SetPos(int p) {
-            if (p == _pos) return;
-            _pos = p;
-            _needsSnap = true;
-            ResetSmoothing();
-        }
     };
 
     void AddFor(RE::Actor* actor);

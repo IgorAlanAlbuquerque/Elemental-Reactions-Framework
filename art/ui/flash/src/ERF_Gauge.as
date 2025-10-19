@@ -2,30 +2,32 @@ import flash.display.BitmapData;
 
 class ERF_Gauge extends MovieClip
 {
-  // ====== camadas ======
+  // ====== container raíz ======
   private var gauge_mc:MovieClip;
-  private var halo_mc:MovieClip;
-  private var ring_bg_mc:MovieClip;
-  private var ring_fg_mc:MovieClip;
-  private var combo_mc:MovieClip;
-  private var _iconMC:MovieClip;
 
-  // ====== geometria ======
-  private var rOut:Number      = 7;
-  private var strokePx:Number  = 1.5;
-  private var iconPadPx:Number = 0.5;
+  // ====== geometria/layout ======
+  private var rOut:Number       = 7;
+  private var strokePx:Number   = 1.5;
+  private var iconPadPx:Number  = 0.5;
   private var iconNudgeX:Number = 0;
   private var iconNudgeY:Number = 0;
+
+  // Spacing equivalente ao C++: base -40 e +40 por slot
+  private var _slotSpacingPx:Number   = 40;
+  private var _slotBaseOffsetX:Number = -40;
+  private var _slotScale:Number       = 1.0;
 
   // ====== estado ======
   private var _ready:Boolean = false;
   private var _tried:Boolean = false;
 
+  // slots dinâmicos (cada um com halo/anel/icon próprios)
+  private var _slotMcs:Array = [];
+
   function ERF_Gauge(){}
 
-  // ---------- util ----------
-  private function _sum(a:Array):Number
-  {
+  // ---------- utils ----------
+  private function _sum(a:Array):Number {
     var s:Number = 0;
     for (var i:Number = 0; i < a.length; ++i) {
       var v:Number = Number(a[i]); if (!isNaN(v)) s += v;
@@ -33,8 +35,7 @@ class ERF_Gauge extends MovieClip
     return s;
   }
 
-  private function _drawArc(mc:MovieClip, f:Number, t:Number, color:Number, alpha:Number):Void
-  {
+  private function _drawArc(mc:MovieClip, f:Number, t:Number, color:Number, alpha:Number):Void {
     if (!mc) return;
     var from:Number = Math.max(0, Math.min(1, f));
     var to:Number   = Math.max(0, Math.min(1, t));
@@ -48,94 +49,99 @@ class ERF_Gauge extends MovieClip
     var steps:Number = Math.max(6, Math.round((to - from) * 48));
     var ang:Number = a0;
     mc.moveTo(Math.cos(ang)*rOut, Math.sin(ang)*rOut);
-
-    for (var i:Number = 1; i <= steps; i++) {
-      ang = a0 + (a1 - a0) * (i / steps);
+    for (var j:Number = 1; j <= steps; j++) {
+      ang = a0 + (a1 - a0) * (j / steps);
       mc.lineTo(Math.cos(ang)*rOut, Math.sin(ang)*rOut);
     }
   }
 
-  private function _drawFilledCircle(mc:MovieClip, r:Number, rgb:Number, alpha:Number):Void
-  {
+  private function _drawFilledCircle(mc:MovieClip, r:Number, rgb:Number, alpha:Number):Void {
     mc.clear();
     mc.lineStyle(0, 0x000000, 0);
     mc.beginFill(rgb, alpha);
     var steps:Number = 64;
-    for (var i:Number = 0; i <= steps; i++) {
-      var a:Number = (i/steps) * Math.PI * 2;
+    for (var k:Number = 0; k <= steps; k++) {
+      var a:Number = (k/steps) * Math.PI * 2;
       var x:Number = Math.cos(a) * r;
       var y:Number = Math.sin(a) * r;
-      if (i == 0) mc.moveTo(x, y); else mc.lineTo(x, y);
+      if (k == 0) mc.moveTo(x, y); else mc.lineTo(x, y);
     }
     mc.endFill();
   }
 
-  private function _clearAllRings():Void
-  {
-    if (ring_bg_mc) ring_bg_mc.clear();
-    if (ring_fg_mc) ring_fg_mc.clear();
-    if (combo_mc)   combo_mc.clear();
-  }
-
   // ============ ciclo de vida ============
-  public function onLoad():Void
-  {
+  public function onLoad():Void {
     var off:Number = rOut + 2;
 
     if (gauge_mc) gauge_mc.removeMovieClip();
     gauge_mc = this.createEmptyMovieClip("gauge_mc", 100);
-    gauge_mc._x = off; 
+    gauge_mc._x = off;
     gauge_mc._y = off;
 
-    halo_mc        = gauge_mc.createEmptyMovieClip("halo_mc",       0);
-    ring_bg_mc     = gauge_mc.createEmptyMovieClip("ring_bg_mc",   10);
-    ring_fg_mc     = gauge_mc.createEmptyMovieClip("ring_fg_mc",   20);
-    combo_mc       = gauge_mc.createEmptyMovieClip("combo_mc",     30);
-
-    var haloMargin:Number = 2;
-    var haloR:Number = rOut + (strokePx * 0.5) + haloMargin;
-    _drawFilledCircle(halo_mc, haloR, 0x000000, 100);
-
-    _clearAllRings();
-
-    _ready = (ring_bg_mc != undefined && ring_fg_mc != undefined && combo_mc != undefined);
+    _ready = true;
     _tried = true;
   }
 
-  private function _tryInit():Void
-  {
+  private function _tryInit():Void {
     if (_tried) return;
     _tried = true;
     onLoad();
   }
 
-  public function isReady():Boolean
-  {
+  public function isReady():Boolean {
     if (!_ready) _tryInit();
     return _ready;
   }
 
-  // ============ API ============
-  public function setIcon(path:String, rgb:Number):Boolean {
-    if (_iconMC) _iconMC.removeMovieClip();
-    _iconMC = gauge_mc.createEmptyMovieClip("icon_mc", 40);
+  // ====== helpers de SLOT ======
+  private function _ensureSlot(i:Number):MovieClip {
+    if (_slotMcs[i]) return _slotMcs[i];
+
+    var slot:MovieClip = gauge_mc.createEmptyMovieClip("slot_"+i, 200 + i);
+    slot._xscale = slot._yscale = _slotScale * 100;
+
+    // subcamadas
+    slot.halo_mc     = slot.createEmptyMovieClip("halo_mc",     0);
+    slot.ring_bg_mc  = slot.createEmptyMovieClip("ring_bg_mc", 10);
+    slot.ring_fg_mc  = slot.createEmptyMovieClip("ring_fg_mc", 20);
+    slot.combo_mc    = slot.createEmptyMovieClip("combo_mc",   30);
+    slot.icon_mc     = null;
+
+    // fundo preto atrás do ícone (equivalente ao look anterior)
+    var haloMargin:Number = 2;
+    var haloR:Number = rOut + (strokePx * 0.5) + haloMargin;
+    _drawFilledCircle(slot.halo_mc, haloR, 0x000000, 100);
+
+    _slotMcs[i] = slot;
+    return slot;
+  }
+
+  private function _slotClear(slot:MovieClip):Void {
+    if (!slot) return;
+    if (slot.ring_bg_mc) slot.ring_bg_mc.clear();
+    if (slot.ring_fg_mc) slot.ring_fg_mc.clear();
+    if (slot.combo_mc)   slot.combo_mc.clear();
+    if (slot.icon_mc) { slot.icon_mc.removeMovieClip(); slot.icon_mc = null; }
+  }
+
+  private function _slotSetIcon(slot:MovieClip, path:String, rgb:Number):Void {
+    if (slot.icon_mc) slot.icon_mc.removeMovieClip();
+    slot.icon_mc = slot.createEmptyMovieClip("icon_mc", 40);
 
     if (rgb == undefined || isNaN(rgb)) rgb = 0xFFFFFF;
     var r:Number = (rgb >> 16) & 0xFF;
     var g:Number = (rgb >> 8)  & 0xFF;
     var b:Number = (rgb)       & 0xFF;
 
-    if (path.substr(0,6) == "img://") {
-      _iconMC.loadMovie(path);              
+    if (path && path.substr(0,6) == "img://") {
+      slot.icon_mc.loadMovie(path);
       var self:ERF_Gauge = this;
       var tries:Number = 0;
-      _iconMC.onEnterFrame = function():Void {
-        if (++tries > 60) { delete this.onEnterFrame; } // timeout de 1s a ~60fps
-
-        if (this._width > 0 && this._height > 0) {     // imagem real chegou
+      slot.icon_mc.onEnterFrame = function():Void {
+        if (++tries > 60) { delete this.onEnterFrame; } // ~1s timeout
+        if (this._width > 0 && this._height > 0) {
           var side:Number = (self.rOut*2) - (self.strokePx*2) - (self.iconPadPx*2);
-          this._width  = side;
-          this._height = side;
+          this._width  = side; this._height = side;
           this._x = -side/2 + self.iconNudgeX;
           this._y = -side/2 + self.iconNudgeY;
           this.cacheAsBitmap = true;
@@ -148,62 +154,115 @@ class ERF_Gauge extends MovieClip
           delete this.onEnterFrame;
         }
       };
-      return true;
     }
-
-    return false;
   }
 
-  public function setComboFill(frac:Number, rgb:Number):Void
-  {
-    if (!_ready) _tryInit();
+  private function _slotDrawCombo(slot:MovieClip, frac:Number, rgb:Number):Void {
     var f:Number = (isNaN(frac)) ? 0 : Math.max(0, Math.min(1, frac));
-    _clearAllRings();
+    // anel de fundo (preto ~30%)
+    slot.ring_bg_mc.clear();
+    _drawArc(slot.ring_bg_mc, 0, 1, 0x000000, 30);
 
-    ring_bg_mc.clear();
-    _drawArc(ring_bg_mc, 0, 1, 0x000000, 30);
-
-    if (f <= 0) { this._visible = false; return; }
+    if (f <= 0) { slot._visible = false; return; }
 
     var col:Number = (!isNaN(rgb) && rgb != undefined) ? Number(rgb) : 0xFFFFFF;
-    combo_mc.clear();
-    _drawArc(combo_mc, 0, f, col, 100);
+    slot.combo_mc.clear();
+    _drawArc(slot.combo_mc, 0, f, col, 100);
 
-    this._visible = true;
+    slot._visible = true;
   }
 
-  public function setAccumulators(values:Array, colors:Array):Void
-  {
-    if (!_ready) _tryInit();
-    _clearAllRings();
+  private function _slotDrawAccum(slot:MovieClip, values:Array, colors:Array):Void {
+    slot.ring_bg_mc.clear();
+    slot.ring_fg_mc.clear();
 
-    if (!values || !colors || values.length != colors.length) { this._visible = false; return; }
+    if (!values || !colors || values.length != colors.length) { slot._visible = false; return; }
 
     var totalRaw:Number = _sum(values);
-    if (totalRaw <= 0) { this._visible = false; return; }
+    if (totalRaw <= 0) { slot._visible = false; return; }
 
     var totalShown:Number = Math.min(100, totalRaw);
     var scale:Number      = totalShown / totalRaw;
 
-    ring_bg_mc.clear();
-    _drawArc(ring_bg_mc, 0, 1, 0x000000, 30);
+    _drawArc(slot.ring_bg_mc, 0, 1, 0x000000, 30);
 
     var cur:Number = 0;
-    for (var i:Number = 0; i < values.length; ++i) {
-      var share:Number = Number(values[i]);
+    for (var i2:Number = 0; i2 < values.length; ++i2) {
+      var share:Number = Number(values[i2]);
       if (isNaN(share) || share <= 0) continue;
 
-      share *= scale;                
+      share *= scale;
       var seg:Number = (share / 100.0);
 
-      var col:Number = Number(colors[i]);
-      if (isNaN(col)) col = 0xFFFFFF;
+      var col2:Number = Number(colors[i2]);
+      if (isNaN(col2)) col2 = 0xFFFFFF;
 
-      _drawArc(ring_fg_mc, cur, cur + seg, col, 100);
+      _drawArc(slot.ring_fg_mc, cur, cur + seg, col2, 100);
       cur += seg;
       if (cur >= 1) break;
     }
 
-    this._visible = true;
+    slot._visible = true;
+  }
+
+  // ============ API batelada ============
+  public function setAll(comboIconPaths:Array, comboRemain01:Array, comboTints:Array,
+                        accumIconPath:String, accumValues:Array, accumColors:Array, accumTint:Number):Boolean
+  {
+    if (!_ready) _tryInit();
+
+    var n:Number = (comboIconPaths != null) ? comboIconPaths.length : 0;
+    if (comboRemain01 == null) comboRemain01 = [];
+    if (comboTints == null)    comboTints    = [];
+
+    // 1) Combos (slots 0..n-1)
+    for (var i:Number = 0; i < n; ++i) {
+      var slot:MovieClip = _ensureSlot(i);
+      slot._x = _slotBaseOffsetX + (i * _slotSpacingPx);
+      slot._y = 0;
+
+      _slotClear(slot);
+      var iconPath:String = String(comboIconPaths[i]);
+      var remain:Number   = Number(comboRemain01[i]);
+      var tint:Number     = Number(comboTints[i]);
+
+      _slotSetIcon(slot, iconPath, tint);
+      _slotDrawCombo(slot, remain, tint);
+      slot._visible = true;
+    }
+
+    // esconder sobras
+    for (var j:Number = n; j < _slotMcs.length; ++j) {
+      if (_slotMcs[j]) { _slotClear(_slotMcs[j]); _slotMcs[j]._visible = false; }
+    }
+
+    // 2) Acumulador no slot N (direita dos combos)
+    var hasAccum:Boolean = false;
+    if (accumValues != null) {
+      var sum:Number = 0;
+      for (var si:Number = 0; si < accumValues.length; ++si) {
+        var vv:Number = Number(accumValues[si]); if (!isNaN(vv)) sum += vv;
+      }
+      hasAccum = (sum > 0);
+    }
+    if (hasAccum) {
+      var aSlot:MovieClip = _ensureSlot(n);
+      aSlot._x = _slotBaseOffsetX + (n * _slotSpacingPx);
+      aSlot._y = 0;
+
+      _slotClear(aSlot);
+      var aTint:Number = (isNaN(accumTint) ? 0xFFFFFF : Number(accumTint));
+
+      if (accumIconPath && accumIconPath.length > 0) {
+        _slotSetIcon(aSlot, accumIconPath, aTint);
+      }
+
+      _slotDrawAccum(aSlot, accumValues, accumColors);
+      aSlot._visible = true;
+    }
+
+    var anyVisible:Boolean = (n > 0) || hasAccum;
+    this._visible = anyVisible;
+    return anyVisible;
   }
 }
