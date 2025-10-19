@@ -43,6 +43,7 @@ namespace {
 
         switch (msg->type) {
             case SKSE::MessagingInterface::kDataLoaded: {
+                ERF::API::OpenRegistrationWindowAndScheduleFreeze();
                 ElementalGaugesHook::InitCarrierRefs();
                 ElementalGaugesHook::Install();
                 ElementalGaugesHook::RegisterAEEventSink();
@@ -98,12 +99,8 @@ namespace {
     }
 }
 
-// ====== EXPORT ======
-// Igual ao TrueHUD: consumidores chamam GetProcAddress("RequestPluginAPI")
-// e recebem o ponteiro para a interface (singleton).
 extern "C" DLLEXPORT void* SKSEAPI RequestPluginAPI(std::uint32_t requestedVersion) {
     if (requestedVersion == ERF_API_VERSION) {
-        // devolve ERF_API_V1*
         return static_cast<void*>(ERF::API::Get());
     }
     return nullptr;

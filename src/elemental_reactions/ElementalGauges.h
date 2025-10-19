@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -16,12 +17,12 @@ namespace ElementalGauges {
         std::string iconPath;
         std::uint32_t iconTint{0xFFFFFF};
 
-        std::vector<std::uint32_t> values;
-        std::vector<std::uint32_t> colors;
+        std::span<const std::uint32_t> values;
+        std::span<const std::uint32_t> colors;
     };
 
-    struct Totals {
-        std::vector<std::uint8_t> values;
+    struct TotalsView {
+        std::span<const std::uint8_t> values;
         bool any() const {
             for (auto v : values)
                 if (v > 0) return true;
@@ -32,6 +33,7 @@ namespace ElementalGauges {
             for (auto v : values) s += v;
             return s;
         }
+        std::size_t size() const { return values.size(); }
     };
 
     std::uint8_t Get(RE::Actor* a, ERF_ElementHandle elem);
@@ -39,8 +41,10 @@ namespace ElementalGauges {
     void Add(RE::Actor* a, ERF_ElementHandle elem, int delta);
     void Clear(RE::Actor* a);
     void RegisterStore();
-    void ForEachDecayed(const std::function<void(RE::FormID, const Totals&)>& fn);
+    void ForEachDecayed(const std::function<void(RE::FormID, TotalsView)>& fn);
     std::optional<HudGaugeBundle> PickHudIconDecayed(RE::FormID id);
+    void InvalidateStateMultipliers(RE::Actor* a);
+    void BuildColorLUTOnce();
 }
 
 namespace ElementalGaugesDecay {

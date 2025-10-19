@@ -1,15 +1,18 @@
 #include "ElementalGaugesHook.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <optional>
 #include <shared_mutex>
 #include <span>
 #include <thread>
 #include <type_traits>
 #include <unordered_map>
 
+#include "../common/Helpers.h"
 #include "../hud/HUDTick.h"
 #include "ElementalGauges.h"
 #include "RE/P/PeakValueModifierEffect.h"
@@ -17,16 +20,75 @@
 
 using namespace std::chrono;
 
+namespace {
+    template <class K, class V, std::size_t N = 64>
+    struct StripedMap {
+        static_assert((N & (N - 1)) == 0, "N must be power of two");
+        struct Stripe {
+            std::unordered_map<K, V> map;
+            mutable std::shared_mutex mx;
+        };
+        std::array<Stripe, N> stripes;
+
+        static constexpr std::size_t idx(const K& k) noexcept { return std::hash<K>{}(k) & (N - 1); }
+
+        // Leitura (compartilhada)
+        std::optional<V> get(const K& k) const {
+            auto& s = stripes[idx(k)];
+            std::shared_lock lk(s.mx);
+            auto it = s.map.find(k);
+            if (it == s.map.end()) return std::nullopt;
+            return it->second;
+        }
+
+        // Escrever/atualizar
+        template <class F>
+        void upsert(const K& k, F&& f) {
+            auto& s = stripes[idx(k)];
+            std::unique_lock lk(s.mx);
+            if (s.map.empty()) s.map.reserve(64);  // reserva mínima por stripe
+            f(s.map);                              // lambda recebe map& e faz emplace/assign/erase
+        }
+
+        // Remover
+        void erase(const K& k) {
+            auto& s = stripes[idx(k)];
+            std::unique_lock lk(s.mx);
+            s.map.erase(k);
+        }
+
+        // erase_if — útil para g_ctx (match por uid/target)
+        template <class Pred>
+        void erase_if(Pred&& p) {
+            for (auto& s : stripes) {
+                std::unique_lock lk(s.mx);
+                std::erase_if(s.map, std::forward<Pred>(p));
+            }
+        }
+    };
+}
+
 namespace GaugesHook {
     using Elem = ERF_ElementHandle;
 
     static RE::BGSKeyword* g_kwGaugeAcc = nullptr;
     static RE::EffectSetting* g_mgefGaugeAcc = nullptr;
 
-    static std::unordered_map<std::uint64_t, double> g_lastAccHint;
-    static std::shared_mutex g_accHintMx;
+    static StripedMap<std::uint64_t, double, 64> g_lastAccHint;
 
-    static std::uint64_t KeyActorOnly(const RE::Actor* a) { return static_cast<std::uint64_t>(a ? a->GetFormID() : 0); }
+    struct EffCtx {
+        RE::ActorHandle target;
+        Elem elem;
+        std::uint16_t uid;
+    };
+
+    static StripedMap<const RE::ActiveEffect*, EffCtx, 64> g_ctx;  // NOSONAR
+
+    static StripedMap<std::uint64_t, double, 64> g_accum;
+
+    static std::uint64_t KeyActorOnly(const RE::Actor* a) noexcept {
+        return static_cast<std::uint64_t>(a ? a->GetFormID() : 0);
+    }
 
     static RE::BGSKeyword* LookupKW(const char* edid, std::uint32_t formID = 0) {
         if (auto* k = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(edid)) return k;
@@ -48,7 +110,6 @@ namespace GaugesHook {
 
         if (g_kwGaugeAcc) {
             const auto kwIDWant = g_kwGaugeAcc->GetFormID();
-            std::size_t i = 0;
             for (auto* kw : mgef->GetKeywords()) {
                 const auto id = kw ? kw->GetFormID() : 0u;
                 if (kw && id == kwIDWant) {
@@ -59,12 +120,6 @@ namespace GaugesHook {
         return false;
     }
 
-    static RE::Actor* AsActor(RE::MagicTarget* mt) {
-        if (!mt) return nullptr;
-        if (auto a = skyrim_cast<RE::Actor*>(mt)) return a;
-        return nullptr;
-    }
-
     static std::optional<Elem> ClassifyElement(const RE::EffectSetting* mgef) {
         if (!mgef) return std::nullopt;
         if (IsGaugeAccCarrier(mgef)) {
@@ -72,7 +127,6 @@ namespace GaugesHook {
         }
 
         const auto kws = mgef->GetKeywords();
-        std::size_t i = 0;
         for (RE::BGSKeyword* kw : kws) {
             if (!kw) continue;
             if (auto h = ElementRegistry::get().findByKeyword(kw)) {
@@ -81,18 +135,6 @@ namespace GaugesHook {
         }
         return std::nullopt;
     }
-
-    struct EffCtx {
-        RE::ActorHandle target;
-        Elem elem;
-        std::uint16_t uid;
-    };
-
-    static std::unordered_map<const RE::ActiveEffect*, EffCtx> g_ctx;  // NOSONAR
-    static std::shared_mutex g_ctxMx;                                  // NOSONAR
-
-    static std::unordered_map<std::uint64_t, double> g_accum;  // NOSONAR
-    static std::shared_mutex g_accumMx;                        // NOSONAR
     static std::uint64_t MakeKey(const RE::Actor* a, Elem e) {
         const std::uint64_t hi = static_cast<std::uint64_t>(a ? a->GetFormID() : 0);
         const std::uint64_t lo = static_cast<std::uint64_t>(e);
@@ -114,24 +156,18 @@ namespace GaugesHook {
             const RE::Actor* tgt = e->target ? e->target->As<RE::Actor>() : nullptr;
 
             if (!e->isApplied) {
-                {
-                    std::unique_lock lk(g_ctxMx);
-                    std::erase_if(g_ctx, [&](auto& kv) {
-                        const auto& ctx = kv.second;
-                        if (ctx.uid != uid) return false;
-                        if (tgt) {
-                            const RE::Actor* a = ctx.target.get().get();
-                            if (!a || a != tgt) return false;
-                        }
-                        return true;
-                    });
-                }
+                g_ctx.erase_if([&](auto& kv) {
+                    const auto& ctx = kv.second;
+                    if (ctx.uid != uid) return false;
+                    if (tgt) {
+                        const RE::Actor* a = ctx.target.get().get();
+                        if (!a || a != tgt) return false;
+                    }
+                    return true;
+                });
                 if (tgt) {
                     const auto key = KeyActorOnly(tgt);
-                    {
-                        std::unique_lock lk(g_accHintMx);
-                        g_lastAccHint.erase(key);
-                    }
+                    g_lastAccHint.erase(key);
                 }
             }
             return RE::BSEventNotifyControl::kContinue;
@@ -172,26 +208,16 @@ namespace GaugesHook {
                     acc = static_cast<double>(self->effect->effectItem.magnitude);
                 }
                 if (acc <= 0.001) acc = 1.0;
-                {
-                    std::unique_lock lk(g_accHintMx);
-                    g_lastAccHint[KeyActorOnly(actor)] = acc;
-                }
+                g_lastAccHint.upsert(KeyActorOnly(actor), [&](auto& mp) { mp[KeyActorOnly(actor)] = acc; });
                 return;
             }
 
             if (auto elem = ClassifyElement(mgef)) {
-                {
-                    std::unique_lock lk(g_ctxMx);
-                    g_ctx[self] = EffCtx{actor->CreateRefHandle(), *elem, self->usUniqueID};
-                }
+                g_ctx.upsert(self,
+                             [&](auto& mp) { mp[self] = EffCtx{actor->CreateRefHandle(), *elem, self->usUniqueID}; });
 
                 if (IsInstantaneous(mgef, self)) {
-                    double acc = 0.0;
-                    {
-                        std::shared_lock lk(g_accHintMx);
-                        auto it = g_lastAccHint.find(KeyActorOnly(actor));
-                        if (it != g_lastAccHint.end()) acc = it->second;
-                    }
+                    double acc = g_lastAccHint.get(KeyActorOnly(actor)).value_or(0.0);
                     if (acc > 0.001) {
                         const int inc = std::max(1, (int)std::lround(acc));
                         ElementalGaugesHook::StartHUDTick();
@@ -225,23 +251,18 @@ namespace GaugesHook {
             Elem elem{};
             bool haveCtx = false;
 
-            {
-                std::shared_lock lk(g_ctxMx);
-                if (auto it = g_ctx.find(self); it != g_ctx.end()) {
-                    haveCtx = true;
-                    target = it->second.target.get().get();
-                    elem = it->second.elem;
-                }
+            if (auto c = g_ctx.get(self)) {
+                haveCtx = true;
+                target = c->target.get().get();
+                elem = c->elem;
             }
 
             if (!haveCtx) {
                 RE::Actor* actor = AsActor(self->target);
                 if (mgef && actor) {
                     if (auto e = ClassifyElement(mgef)) {
-                        {
-                            std::unique_lock lk(g_ctxMx);
-                            g_ctx[self] = EffCtx{actor->CreateRefHandle(), *e, self->usUniqueID};
-                        }
+                        g_ctx.upsert(
+                            self, [&](auto& mp) { mp[self] = EffCtx{actor->CreateRefHandle(), *e, self->usUniqueID}; });
                         target = actor;
                         elem = *e;
                         haveCtx = true;
@@ -254,12 +275,7 @@ namespace GaugesHook {
                 return;
             }
 
-            double accPerSec = 0.0;
-            {
-                std::shared_lock lk(g_accHintMx);
-                auto it = g_lastAccHint.find(KeyActorOnly(target));
-                if (it != g_lastAccHint.end()) accPerSec = it->second;
-            }
+            const double accPerSec = g_lastAccHint.get(KeyActorOnly(target)).value_or(0.0);
             if (accPerSec <= 0.001) {
                 _orig(self, dt);
                 return;
@@ -268,12 +284,16 @@ namespace GaugesHook {
             int inc = 0;
             if (dt > 0.0f) {
                 const auto key = MakeKey(target, elem);
-                std::unique_lock lk(g_accumMx);
-                double& acc = g_accum[key];
-                const double add = accPerSec * static_cast<double>(dt);
-                acc += add;
-                inc = static_cast<int>(std::floor(acc));
-                if (inc >= 1) acc -= inc;
+                g_accum.upsert(key, [&](auto& mp) {
+                    double& acc = mp[key];               // cria 0 no primeiro acesso
+                    if (mp.size() == 1) mp.reserve(64);  // reserva mínima por stripe (primeiro uso)
+                    acc += accPerSec * static_cast<double>(dt);
+                    int whole = static_cast<int>(std::floor(acc));
+                    if (whole >= 1) {
+                        inc = whole;
+                        acc -= whole;
+                    }
+                });
             }
 
             if (inc > 0) {

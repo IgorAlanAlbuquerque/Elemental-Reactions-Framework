@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "../common/Helpers.h"
 #include "../elemental_reactions/erf_reaction.h"
 #include "SKSE/SKSE.h"
 #include "TrueHUDAPI.h"
@@ -35,12 +36,16 @@ namespace InjectHUD {
 
     class ERFWidget;
     using WidgetPtr = std::shared_ptr<ERFWidget>;
+    struct HUDEntry {
+        RE::ActorHandle handle{};
+        WidgetPtr widget;
+    };
 
     constexpr auto ERF_SWF_PATH = "erfgauge/erfgauge.swf";
     constexpr auto ERF_SYMBOL_NAME = "ERF_Gauge";
-    constexpr uint32_t ERF_WIDGET_TYPE = 'ELRE';
+    constexpr uint32_t ERF_WIDGET_TYPE = FOURCC('E', 'L', 'R', 'E');
 
-    extern std::unordered_map<RE::FormID, std::vector<WidgetPtr>> widgets;
+    extern std::unordered_map<RE::FormID, HUDEntry> widgets;
     extern std::unordered_map<RE::FormID, std::vector<ActiveReactionHUD>> combos;
     extern std::deque<PendingReaction> g_comboQueue;
     extern std::mutex g_comboMx;
@@ -49,10 +54,8 @@ namespace InjectHUD {
 
     class ERFWidget : public TRUEHUD_API::WidgetBase {
     public:
-        explicit ERFWidget(int slot = 0) : _slot(slot) {}
+        explicit ERFWidget() = default;
 
-        int _slot{0};
-        int _pos = 0;
         bool _needsSnap = true;
 
         double _lastX{std::numeric_limits<double>::quiet_NaN()};
@@ -70,9 +73,6 @@ namespace InjectHUD {
         Smooth01 _shockDisp{};
         Smooth01 _comboDisp{};
 
-        static constexpr double kSlotSpacingPx = 30.0;
-        static constexpr double kTopOffsetPx = 0.0;
-
         static constexpr float kPlayerMarginLeftPx = 45.0f;
         static constexpr float kPlayerMarginBottomPx = 160.0f;
         static constexpr float kPlayerScale = 1.5f;
@@ -82,18 +82,12 @@ namespace InjectHUD {
         void Dispose() override {}
 
         void FollowActorHead(RE::Actor* actor);
-        void SetIconAndGauge(const std::string& iconPath, const std::vector<uint32_t>& values,
-                             const std::vector<uint32_t>& colors, uint32_t tintRGB);
-
-        void SetCombo(const std::string& iconPath, float remaining01, std::uint32_t tintRGB);
+        void SetAll(const std::vector<std::string>& comboIconPaths, const std::vector<double>& comboRemain01,
+                    const std::vector<std::uint32_t>& comboTintsRGB, const std::string& accumIconPath,
+                    const std::vector<double>& accumValues, const std::vector<std::uint32_t>& accumColorsRGB,
+                    std::uint32_t accumTintRGB);
 
         void ResetSmoothing() { _lastX = _lastY = std::numeric_limits<double>::quiet_NaN(); }
-        void SetPos(int p) {
-            if (p == _pos) return;
-            _pos = p;
-            _needsSnap = true;
-            ResetSmoothing();
-        }
     };
 
     void AddFor(RE::Actor* actor);
@@ -104,5 +98,4 @@ namespace InjectHUD {
     void OnTrueHUDClose();
     void OnUIFrameBegin();
     inline double NowRtS();
-    std::uint32_t MakeWidgetID(RE::FormID id, int slot);
 }

@@ -1,5 +1,8 @@
 #pragma once
+
+#include <cstdint>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 #include "RE/Skyrim.h"
@@ -19,13 +22,14 @@ struct ERF_ReactionHudIcon {
 struct ERF_ReactionDesc {
     std::string name;
     std::vector<ERF_ElementHandle> elements;
-    bool ordered = false;
-    std::uint32_t minTotalGauge = 100;
+
     float minPctEach = 0.0f;
     float minSumSelected = 0.0f;
     float cooldownSeconds = 0.0f;
-    bool cooldownIsRealTime = true;
     float elementLockoutSeconds = 0.0f;
+
+    bool ordered = false;
+    bool cooldownIsRealTime = true;
     bool elementLockoutIsRealTime = true;
     bool clearAllOnTrigger = true;
 
@@ -40,13 +44,31 @@ public:
     static ReactionRegistry& get();
     ERF_ReactionHandle registerReaction(const ERF_ReactionDesc& d);
     const ERF_ReactionDesc* get(ERF_ReactionHandle h) const;
-    std::optional<ERF_ReactionHandle> pickBest(const std::vector<std::uint8_t>& totals,
-                                               const std::vector<ERF_ElementHandle>& present) const;
-    std::optional<ERF_ReactionHandle> pickBestForHud(const std::vector<std::uint8_t>& totals,
-                                                     const std::vector<ERF_ElementHandle>& present) const;
+    std::optional<ERF_ReactionHandle> pickBestFast(const std::vector<std::uint8_t>& totals,
+                                                   const std::vector<ERF_ElementHandle>& present, int sumAll,
+                                                   float invSumAll) const;
     std::size_t size() const noexcept;
+    void freeze();
+    bool isFrozen() const noexcept { return _indexed; }
 
 private:
     ReactionRegistry() = default;
-    std::vector<ERF_ReactionDesc> _reactions;
+    std::vector<ERF_ReactionDesc> _reactions;  // [0] inválido
+
+    using Mask = std::uint64_t;
+
+    // caches/índices (mutáveis para construir em métodos const)
+    mutable bool _indexed = false;
+    mutable std::vector<Mask> _maskByH;
+    mutable std::vector<std::uint8_t> _kByH;
+    mutable std::vector<std::uint32_t> _minTotalByH;
+    mutable std::vector<float> _minPctEachByH;
+    mutable std::vector<float> _minSumSelByH;
+    mutable std::unordered_map<Mask, std::vector<ERF_ReactionHandle>> _byMask;
+
+    void buildIndex_() const;
+    static Mask makeMask_(const std::vector<ERF_ElementHandle>& elems);
+    static std::optional<ERF_ReactionHandle> pickBest_core(const std::vector<std::uint8_t>& totals,
+                                                           const std::vector<ERF_ElementHandle>& present,
+                                                           float invSumAll, const ReactionRegistry* self);
 };

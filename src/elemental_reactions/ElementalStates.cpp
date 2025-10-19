@@ -6,6 +6,7 @@
 
 #include "../common/Helpers.h"
 #include "../common/PluginSerialization.h"
+#include "ElementalGauges.h"
 #include "erf_state.h"
 
 namespace {
@@ -22,7 +23,10 @@ namespace {
         constexpr std::uint32_t kVersion = 2;
     }
 
-    bool Save(SKSE::SerializationInterface* ser) {
+    bool Save(SKSE::SerializationInterface* ser, bool dryRun) {
+        if (dryRun) {
+            return !g_store.empty();  // só abre record se houver atores/estados
+        }
         const auto countActors = static_cast<std::uint32_t>(g_store.size());
         if (!ser->WriteRecordData(&countActors, sizeof(countActors))) return false;
 
@@ -115,8 +119,15 @@ bool ElementalStates::IsActive(RE::Actor* a, ERF_StateHandle sh) {
     return it->second.active.count(sh) > 0;
 }
 
-void ElementalStates::Activate(RE::Actor* a, ERF_StateHandle sh) { (void)SetActive(a, sh, true); }
-void ElementalStates::Deactivate(RE::Actor* a, ERF_StateHandle sh) { (void)SetActive(a, sh, false); }
+void ElementalStates::Activate(RE::Actor* a, ERF_StateHandle sh) {
+    (void)SetActive(a, sh, true);
+    ElementalGauges::InvalidateStateMultipliers(a);
+}
+
+void ElementalStates::Deactivate(RE::Actor* a, ERF_StateHandle sh) {
+    (void)SetActive(a, sh, false);
+    ElementalGauges::InvalidateStateMultipliers(a);
+}
 
 void ElementalStates::Clear(RE::Actor* a) {
     if (!a) return;

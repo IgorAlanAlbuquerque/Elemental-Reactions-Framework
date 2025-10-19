@@ -41,3 +41,6 @@ inline RE::Actor* AsActor(RE::MagicTarget* mt) noexcept {
     }
     return 0.0f;
 }
+
+[[nodiscard]] constexpr float safeDiv(float a, float b) noexcept { return (b <= 0.0f) ? 0.0f : (a / b); }
+[[nodiscard]] constexpr double safeDiv(double a, double b) noexcept { return (b <= 0.0) ? 0.0 : (a / b); }
