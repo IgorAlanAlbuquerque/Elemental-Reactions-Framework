@@ -32,6 +32,7 @@ namespace {
 
     std::unordered_map<RE::FormID, float> lastAddedAt;
     constexpr float INIT_GRACE_SECONDS = 0.05f;
+    static constexpr float EVICT_SECONDS = 10.0f;
 
     void UpdateAllOnUIThread() {
         InjectHUD::OnUIFrameBegin();
@@ -95,7 +96,12 @@ namespace {
                 const float seen = lastSeen.contains(id) ? lastSeen[id] : 0.0f;
                 const float age = now - seen;
 
+                // Esconder rápido para evitar churn de alocação
                 if (age >= ZERO_GRACE_SECONDS) {
+                    InjectHUD::HideFor(id);
+                }
+                // Destruir só depois de um tempo maior de inatividade
+                if (age >= EVICT_SECONDS) {
                     toRemove.push_back(id);
                     lastAddedAt.erase(id);
                     lastSeen.erase(id);
@@ -111,11 +117,12 @@ namespace {
 
         for (auto it = lastSeen.begin(); it != lastSeen.end();) {
             const RE::FormID id = it->first;
-            const bool hasWidgets = (InjectHUD::widgets.find(id) != InjectHUD::widgets.end());
+            const bool hasEntry = (InjectHUD::widgets.find(id) != InjectHUD::widgets.end());
             const bool aliveNow = (alive.find(id) != alive.end());
             const float age = now - it->second;
 
-            if (!aliveNow && !hasWidgets && age >= ZERO_GRACE_SECONDS) {
+            // Se já não há entry e passou do grace, limpe tracking
+            if (!aliveNow && !hasEntry && age >= ZERO_GRACE_SECONDS) {
                 lastAddedAt.erase(id);
                 it = lastSeen.erase(it);
             } else {

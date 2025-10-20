@@ -87,6 +87,7 @@ std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(const std::vec
                                                                   float invSumAll, const ReactionRegistry* self) {
     self->buildIndex_();
 
+    // 1) máscara dos presentes (você já fazia)
     ReactionRegistry::Mask presentMask = 0;
     for (auto h : present) {
         if (!h) continue;
@@ -95,15 +96,23 @@ std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(const std::vec
     }
     if (!presentMask) return std::nullopt;
 
+    auto popcount64 = [](ReactionRegistry::Mask m) -> int {
+#if defined(_MSC_VER)
+        return static_cast<int>(__popcnt64(m));
+#else
+        return __builtin_popcountll(m);
+#endif
+    };
+
     ERF_ReactionHandle bestH = 0;
     float bestScore = 0.0f;
     std::size_t bestK = 0;
 
-    for (auto sub = presentMask; sub; sub = (sub - 1) & presentMask) {
-        auto it = self->_byMask.find(sub);
-        if (it == self->_byMask.end()) continue;
-        const auto& bucket = it->second;
+    auto evalBucket = [&](ReactionRegistry::Mask m) {
+        auto itB = self->_byMask.find(m);
+        if (itB == self->_byMask.end()) return;
 
+        const auto& bucket = itB->second;
         for (ERF_ReactionHandle h : bucket) {
             const auto& r = self->_reactions[h];
 
@@ -113,6 +122,7 @@ std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(const std::vec
             for (auto eh : r.elements) {
                 const int v = valueForHandle(totals, eh);
                 sumSel += v;
+
                 const float req = self->_minPctEachByH[h];
                 if (req > 0.0f) {
                     const float p = static_cast<float>(v) * invSumAll;
@@ -130,13 +140,32 @@ std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(const std::vec
             const std::size_t k = self->_kByH[h];
             const bool better = (fracSel > bestScore) || ((std::abs(fracSel - bestScore) < 1e-6f) && (k > bestK)) ||
                                 ((std::abs(fracSel - bestScore) < 1e-6f) && (k == bestK) && (h < bestH));
+
             if (better) {
                 bestScore = fracSel;
                 bestK = k;
                 bestH = h;
+
+                // early-stop: score perfeito
+                if (bestScore >= 1.0f - 1e-6f) return;
             }
         }
+    };
+
+    // 2) Bucket EXATO primeiro — caminho feliz
+    evalBucket(presentMask);
+    if (bestH != 0 && bestScore >= 1.0f - 1e-6f) return bestH;
+
+    // 3) Submáscaras — com poda por cardinalidade
+    for (auto sub = presentMask; sub; sub = (sub - 1) & presentMask) {
+        if (sub == presentMask) continue;
+        const int k = popcount64(sub);
+        if (k < 2) continue;  // se 1-elem não é considerado, isso reduz muito a enumeração
+
+        evalBucket(sub);
+        if (bestH != 0 && bestScore >= 1.0f - 1e-6f) break;
     }
+
     if (bestH == 0) return std::nullopt;
     return bestH;
 }

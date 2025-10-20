@@ -93,6 +93,7 @@ namespace InjectHUD {
     void AddFor(RE::Actor* actor);
     void UpdateFor(RE::Actor* actor);
     void BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float seconds, bool realTime);
+    bool HideFor(RE::FormID id);
     bool RemoveFor(RE::FormID id);
     void RemoveAllWidgets();
     void OnTrueHUDClose();

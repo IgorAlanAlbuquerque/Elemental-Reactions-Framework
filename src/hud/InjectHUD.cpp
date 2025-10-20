@@ -299,7 +299,7 @@ void InjectHUD::AddFor(RE::Actor* actor) {
     g_trueHUD->AddActorInfoBar(h);
 
     auto w = std::make_shared<ERFWidget>();
-    const auto wid = uint16_t((id ^ (id >> 16)) | 1);
+    const auto wid = static_cast<uint32_t>(actor->GetFormID());
     g_trueHUD->AddWidget(g_pluginHandle, ERF_WIDGET_TYPE, wid, ERF_SYMBOL_NAME, w);
     w->ProcessDelegates();
     entry.widget = std::move(w);
@@ -394,14 +394,53 @@ void InjectHUD::BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float sec
     }
 }
 
+bool InjectHUD::HideFor(RE::FormID id) {
+    auto it = widgets.find(id);
+    if (it == widgets.end() || !it->second.widget) return false;
+
+    auto& w = *it->second.widget;
+    if (!w._view) return false;
+
+    // Somente esconder; mantém o widget alocado para reuso.
+    RE::GFxValue vis;
+    vis.SetBoolean(false);
+    w._object.SetMember("_visible", vis);
+
+    // (Opcional) limpar conteúdo para não deixar “rastro” visual se reexibir rápido:
+    // arrays vazios + sem acumulador
+    RE::GFxValue args[7], ret;
+    RE::GFxValue emptyArr1, emptyArr2, emptyArr3, emptyArr4, emptyArr5;
+    w._view->CreateArray(&emptyArr1);
+    w._view->CreateArray(&emptyArr2);
+    w._view->CreateArray(&emptyArr3);
+    w._view->CreateArray(&emptyArr4);
+    w._view->CreateArray(&emptyArr5);
+
+    RE::GFxValue emptyStr;
+    emptyStr.SetString("");
+    RE::GFxValue zero;
+    zero.SetNumber(0.0);
+
+    args[0] = emptyArr1;  // comboIconPaths
+    args[1] = emptyArr2;  // comboRemain01
+    args[2] = emptyArr3;  // comboTintsRGB
+    args[3] = emptyStr;   // accumIconPath
+    args[4] = emptyArr4;  // accumValues
+    args[5] = emptyArr5;  // accumColorsRGB
+    args[6] = zero;       // accumTintRGB
+
+    w._object.Invoke("setAll", &ret, args, 7);
+
+    return true;
+}
+
 bool InjectHUD::RemoveFor(RE::FormID id) {
     if (!g_trueHUD || !id) return false;
     auto it = widgets.find(id);
     if (it == widgets.end()) return false;
 
     if (it->second.widget) {
-        const auto wid = uint16_t((id ^ (id >> 16)) | 1);
-        g_trueHUD->RemoveWidget(g_pluginHandle, ERF_WIDGET_TYPE, wid, TRUEHUD_API::WidgetRemovalMode::Immediate);
+        g_trueHUD->RemoveWidget(g_pluginHandle, ERF_WIDGET_TYPE, id, TRUEHUD_API::WidgetRemovalMode::Immediate);
         it->second.widget.reset();
     }
     widgets.erase(it);
@@ -418,8 +457,7 @@ void InjectHUD::RemoveAllWidgets() {
 
     for (const auto& [id, entry] : widgets) {
         if (!entry.widget) continue;
-        const auto wid = uint16_t((id ^ (id >> 16)) | 1);
-        g_trueHUD->RemoveWidget(g_pluginHandle, ERF_WIDGET_TYPE, wid, TRUEHUD_API::WidgetRemovalMode::Immediate);
+        g_trueHUD->RemoveWidget(g_pluginHandle, ERF_WIDGET_TYPE, id, TRUEHUD_API::WidgetRemovalMode::Immediate);
     }
     widgets.clear();
     combos.clear();
