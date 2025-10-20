@@ -37,14 +37,14 @@ namespace Gauges {
         std::vector<float> blockUntilH;
         std::vector<double> blockUntilRtS;
 
-        std::unordered_map<ERF_ReactionHandle, double> reactBlockUntilRtS;
-        std::unordered_map<ERF_ReactionHandle, float> reactBlockUntilH;
-        std::unordered_map<ERF_ReactionHandle, std::uint8_t> inReaction;
+        std::vector<double> reactCdRtS;
+        std::vector<float> reactCdH;
+        std::vector<std::uint8_t> inReaction;
 
-        std::unordered_set<ERF_PreEffectHandle> preActive;
-        std::unordered_map<ERF_PreEffectHandle, float> preLastIntensity;
-        std::unordered_map<ERF_PreEffectHandle, double> preExpireRtS;
-        std::unordered_map<ERF_PreEffectHandle, float> preExpireH;
+        std::vector<std::uint8_t> preActive;
+        std::vector<float> preIntensity;
+        std::vector<double> preExpireRtS;
+        std::vector<float> preExpireH;
 
         std::vector<double> effMult;
         bool effDirty = true;
@@ -60,18 +60,33 @@ namespace Gauges {
 
     inline std::size_t firstIndex() { return kReserveZero ? 1u : 0u; }
     inline std::size_t idx(ERF_ElementHandle h) { return static_cast<std::size_t>(h == 0 ? 1 : h); }
+    inline std::size_t idxElem(ERF_ElementHandle h) { return static_cast<std::size_t>(h == 0 ? 1 : h); }
+    inline std::size_t idxReact(ERF_ReactionHandle r) { return static_cast<std::size_t>(r == 0 ? 1 : r); }
+    inline std::size_t idxPre(ERF_PreEffectHandle p) { return static_cast<std::size_t>(p == 0 ? 1 : p); }
 
     inline void initEntryDenseIfNeeded(Entry& e) {
         if (e.sized) return;
         const auto& caps = ERF::API::Caps();
-        const std::size_t need = static_cast<std::size_t>(caps.numElements) + (kReserveZero ? 1u : 0u);
 
-        e.v.assign(need, 0);
-        e.lastHitH.assign(need, 0.f);
-        e.lastEvalH.assign(need, 0.f);
-        e.blockUntilH.assign(need, 0.f);
-        e.blockUntilRtS.assign(need, 0.0);
-        e.effMult.assign(need, 1.0);
+        const std::size_t nE = static_cast<std::size_t>(caps.numElements) + 1;
+        const std::size_t nR = static_cast<std::size_t>(caps.numReactions) + 1;
+        const std::size_t nP = static_cast<std::size_t>(caps.numPreEffects) + 1;
+
+        e.v.assign(nE, 0);
+        e.lastHitH.assign(nE, 0.f);
+        e.lastEvalH.assign(nE, 0.f);
+        e.blockUntilH.assign(nE, 0.f);
+        e.blockUntilRtS.assign(nE, 0.0);
+        e.effMult.assign(nE, 1.0);
+
+        e.reactCdRtS.assign(nR, 0.0);
+        e.reactCdH.assign(nR, 0.f);
+        e.inReaction.assign(nR, 0u);
+
+        e.preActive.assign(nP, 0u);
+        e.preIntensity.assign(nP, 0.f);
+        e.preExpireRtS.assign(nP, 0.0);
+        e.preExpireH.assign(nP, 0.f);
 
         e.effDirty = true;
         e.sized = true;
@@ -162,16 +177,16 @@ namespace {
 
     static inline void SetReactionCooldown(Gauges::Entry& e, ERF_ReactionHandle rh, float nowH, float cooldownSeconds,
                                            bool cooldownIsRealTime) {
-        if (cooldownSeconds <= 0.f) return;
+        if (cooldownSeconds <= 0.f || rh == 0) return;
 
-        const double nowRt = NowRealSeconds();
-        const double untilRt = nowRt + cooldownSeconds;
-        const float untilH = nowH + static_cast<float>(cooldownSeconds / 3600.0);
+        const std::size_t ri = Gauges::idxReact(rh);
 
         if (cooldownIsRealTime) {
-            e.reactBlockUntilRtS[rh] = std::max(e.reactBlockUntilRtS[rh], untilRt);
+            const double untilRt = NowRealSeconds() + static_cast<double>(cooldownSeconds);
+            if (ri < e.reactCdRtS.size()) e.reactCdRtS[ri] = std::max(e.reactCdRtS[ri], untilRt);
         } else {
-            e.reactBlockUntilH[rh] = std::max(e.reactBlockUntilH[rh], untilH);
+            const float untilH = nowH + (cooldownSeconds / 3600.0f);
+            if (ri < e.reactCdH.size()) e.reactCdH[ri] = std::max(e.reactCdH[ri], untilH);
         }
     }
 
@@ -246,7 +261,7 @@ namespace {
                                           std::uint8_t gaugeNow) {
         if (!a || elem == 0) return false;
 
-        auto list = PreEffectRegistry::get().listByElement(elem);
+        const auto list = PreEffectRegistry::get().listByElement(elem);
         if (list.empty()) return false;
 
         const double nowRt = NowRealSeconds();
@@ -258,15 +273,33 @@ namespace {
             const auto* pd = PreEffectRegistry::get().get(ph);
             if (!pd || pd->element != elem) continue;
 
-            const bool above = gaugeNow >= pd->minGauge;
+            const std::size_t pi = Gauges::idxPre(ph);
+            if (pi >= e.preActive.size()) continue;
+
+            const bool above = (gaugeNow >= pd->minGauge);
 
             if (!above) {
-                if (e.preActive.erase(ph) > 0) {
-                    e.preLastIntensity.erase(ph);
-                    e.preExpireRtS.erase(ph);
-                    e.preExpireH.erase(ph);
+                if (e.preActive[pi]) {
+                    e.preActive[pi] = 0u;
+                    e.preIntensity[pi] = 0.f;
+                    e.preExpireRtS[pi] = 0.0;
+                    e.preExpireH[pi] = 0.f;
+
                     if (pd->cb) {
-                        pd->cb(a, elem, gaugeNow, 0.0f, pd->user);
+                        if (auto* tasks = SKSE::GetTaskInterface()) {
+                            RE::ActorHandle h = a->CreateRefHandle();
+                            auto cb = pd->cb;
+                            auto user = pd->user;
+                            const auto passElem = elem;
+                            const auto passGauge = gaugeNow;
+                            tasks->AddTask([h, cb, user, passElem, passGauge]() {
+                                if (auto actorPtr = h.get().get()) {
+                                    cb(actorPtr, passElem, passGauge, 0.0f, user);
+                                }
+                            });
+                        } else {
+                            pd->cb(a, elem, gaugeNow, 0.0f, pd->user);
+                        }
                     }
                     any = true;
                 }
@@ -279,24 +312,21 @@ namespace {
 
             bool needApply = false;
 
-            if (!e.preActive.count(ph)) {
+            if (!e.preActive[pi]) {
                 needApply = true;
             } else {
-                auto it = e.preLastIntensity.find(ph);
-                const float last = (it != e.preLastIntensity.end()) ? it->second : -9999.0f;
-                if (std::abs(last - intensity) > 1e-3f) {
+                const float last = e.preIntensity[pi];
+                if (std::fabs(last - intensity) > 1e-3f) {
                     needApply = true;
                 }
 
                 if (!needApply && pd->durationSeconds > 0.0f) {
-                    const double marginRt = 0.20;
-                    const float marginH = 0.20f / 3600.0f;
+                    constexpr double marginRt = 0.20;
+                    constexpr float marginH = 0.20f / 3600.0f;
                     if (pd->durationIsRealTime) {
-                        auto ex = e.preExpireRtS.find(ph);
-                        if (ex != e.preExpireRtS.end() && nowRt + marginRt >= ex->second) needApply = true;
+                        if (nowRt + marginRt >= e.preExpireRtS[pi]) needApply = true;
                     } else {
-                        auto ex = e.preExpireH.find(ph);
-                        if (ex != e.preExpireH.end() && nowH + marginH >= ex->second) needApply = true;
+                        if (nowH + marginH >= e.preExpireH[pi]) needApply = true;
                     }
                 }
             }
@@ -321,15 +351,16 @@ namespace {
                 }
             }
 
-            e.preActive.insert(ph);
-            e.preLastIntensity[ph] = intensity;
+            e.preActive[pi] = 1u;
+            e.preIntensity[pi] = intensity;
 
             if (pd->durationSeconds > 0.0f) {
                 if (pd->durationIsRealTime) {
-                    e.preExpireRtS[ph] = std::max(e.preExpireRtS[ph], nowRt + pd->durationSeconds);
+                    const double untilRt = nowRt + static_cast<double>(pd->durationSeconds);
+                    e.preExpireRtS[pi] = std::max(e.preExpireRtS[pi], untilRt);
                 } else {
-                    e.preExpireH[ph] =
-                        std::max(e.preExpireH[ph], nowH + static_cast<float>(pd->durationSeconds / 3600.0));
+                    const float untilH = nowH + static_cast<float>(pd->durationSeconds / 3600.0);
+                    e.preExpireH[pi] = std::max(e.preExpireH[pi], untilH);
                 }
             }
 
@@ -345,7 +376,6 @@ namespace {
         const auto begin = Gauges::firstIndex();
         const auto n = e.v.size();
 
-        // já dimensionado: só reset
         std::fill(e.effMult.begin() + begin, e.effMult.begin() + n, 1.0);
 
         const auto active = ElementalStates::GetActive(a);
@@ -380,6 +410,7 @@ namespace {
         if (dryRun) {
             return !m.empty();
         }
+
         const std::uint32_t count = static_cast<std::uint32_t>(m.size());
         if (!ser->WriteRecordData(&count, sizeof(count))) return false;
 
@@ -396,34 +427,6 @@ namespace {
             return ser->WriteRecordData(&n, sizeof(n)) && (n == 0 || ser->WriteRecordData(v.data(), n * sizeof(v[0])));
         };
 
-        auto writeMapD = [&](const std::unordered_map<ERF_ReactionHandle, double>& mp) {
-            const std::uint32_t n = static_cast<std::uint32_t>(mp.size());
-            if (!ser->WriteRecordData(&n, sizeof(n))) return false;
-            for (const auto& [k, v] : mp) {
-                if (!ser->WriteRecordData(&k, sizeof(k))) return false;
-                if (!ser->WriteRecordData(&v, sizeof(v))) return false;
-            }
-            return true;
-        };
-        auto writeMapF = [&](const std::unordered_map<ERF_ReactionHandle, float>& mp) {
-            const std::uint32_t n = static_cast<std::uint32_t>(mp.size());
-            if (!ser->WriteRecordData(&n, sizeof(n))) return false;
-            for (const auto& [k, v] : mp) {
-                if (!ser->WriteRecordData(&k, sizeof(k))) return false;
-                if (!ser->WriteRecordData(&v, sizeof(v))) return false;
-            }
-            return true;
-        };
-        auto writeMapU8 = [&](const std::unordered_map<ERF_ReactionHandle, std::uint8_t>& mp) {
-            const std::uint32_t n = static_cast<std::uint32_t>(mp.size());
-            if (!ser->WriteRecordData(&n, sizeof(n))) return false;
-            for (const auto& [k, v] : mp) {
-                if (!ser->WriteRecordData(&k, sizeof(k))) return false;
-                if (!ser->WriteRecordData(&v, sizeof(v))) return false;
-            }
-            return true;
-        };
-
         for (const auto& [id, e] : m) {
             if (!ser->WriteRecordData(&id, sizeof(id))) return false;
 
@@ -433,15 +436,21 @@ namespace {
             if (!writeVecF(e.blockUntilH)) return false;
             if (!writeVecD(e.blockUntilRtS)) return false;
 
-            if (!writeMapD(e.reactBlockUntilRtS)) return false;
-            if (!writeMapF(e.reactBlockUntilH)) return false;
-            if (!writeMapU8(e.inReaction)) return false;
+            if (!writeVecD(e.reactCdRtS)) return false;
+            if (!writeVecF(e.reactCdH)) return false;
+            if (!writeVecU8(e.inReaction)) return false;
+
+            if (!writeVecU8(e.preActive)) return false;
+            if (!writeVecF(e.preIntensity)) return false;
+            if (!writeVecD(e.preExpireRtS)) return false;
+            if (!writeVecF(e.preExpireH)) return false;
         }
         return true;
     }
 
     bool Load(SKSE::SerializationInterface* ser, std::uint32_t version, std::uint32_t) {
-        if (version > Gauges::kVersion) return false;
+        if (version != Gauges::kVersion) return false;
+
         auto& m = Gauges::state();
         m.clear();
 
@@ -467,64 +476,43 @@ namespace {
             return n == 0 || ser->ReadRecordData(v.data(), n * sizeof(v[0]));
         };
 
-        auto readMapD = [&](std::unordered_map<ERF_ReactionHandle, double>& mp) -> bool {
-            std::uint32_t n{};
-            if (!ser->ReadRecordData(&n, sizeof(n))) return false;
-            mp.clear();
-            mp.reserve(n);
-            for (std::uint32_t i = 0; i < n; ++i) {
-                ERF_ReactionHandle k{};
-                double v{};
-                if (!ser->ReadRecordData(&k, sizeof(k))) return false;
-                if (!ser->ReadRecordData(&v, sizeof(v))) return false;
-                mp.emplace(k, v);
-            }
-            return true;
+        const auto& caps = ERF::API::Caps();
+        const std::size_t nE = static_cast<std::size_t>(caps.numElements) + 1;
+        const std::size_t nR = static_cast<std::size_t>(caps.numReactions) + 1;
+        const std::size_t nP = static_cast<std::size_t>(caps.numPreEffects) + 1;
+
+        auto padU8 = [&](std::vector<std::uint8_t>& v, std::size_t need) {
+            if (v.size() < need) v.resize(need, 0u);
         };
-        auto readMapF = [&](std::unordered_map<ERF_ReactionHandle, float>& mp) -> bool {
-            std::uint32_t n{};
-            if (!ser->ReadRecordData(&n, sizeof(n))) return false;
-            mp.clear();
-            mp.reserve(n);
-            for (std::uint32_t i = 0; i < n; ++i) {
-                ERF_ReactionHandle k{};
-                float v{};
-                if (!ser->ReadRecordData(&k, sizeof(k))) return false;
-                if (!ser->ReadRecordData(&v, sizeof(v))) return false;
-                mp.emplace(k, v);
-            }
-            return true;
+        auto padF = [&](std::vector<float>& v, std::size_t need) {
+            if (v.size() < need) v.resize(need, 0.f);
         };
-        auto readMapU8 = [&](std::unordered_map<ERF_ReactionHandle, std::uint8_t>& mp) -> bool {
-            std::uint32_t n{};
-            if (!ser->ReadRecordData(&n, sizeof(n))) return false;
-            mp.clear();
-            mp.reserve(n);
-            for (std::uint32_t i = 0; i < n; ++i) {
-                ERF_ReactionHandle k{};
-                std::uint8_t v{};
-                if (!ser->ReadRecordData(&k, sizeof(k))) return false;
-                if (!ser->ReadRecordData(&v, sizeof(v))) return false;
-                mp.emplace(k, v);
-            }
-            return true;
+        auto padD = [&](std::vector<double>& v, std::size_t need) {
+            if (v.size() < need) v.resize(need, 0.0);
         };
 
         for (std::uint32_t i = 0; i < count; ++i) {
             RE::FormID oldID{}, newID{};
             if (!ser->ReadRecordData(&oldID, sizeof(oldID))) return false;
+
             if (!ser->ResolveFormID(oldID, newID)) {
-                Gauges::Entry dummy{};
-                if (!readVecU8(dummy.v)) return false;
-                if (!readVecF(dummy.lastHitH)) return false;
-                if (!readVecF(dummy.lastEvalH)) return false;
-                if (!readVecF(dummy.blockUntilH)) return false;
-                if (!readVecD(dummy.blockUntilRtS)) return false;
-                if (version >= 3) {
-                    if (!readMapD(dummy.reactBlockUntilRtS)) return false;
-                    if (!readMapF(dummy.reactBlockUntilH)) return false;
-                    if (!readMapU8(dummy.inReaction)) return false;
-                }
+                std::vector<std::uint8_t> u8;
+                std::vector<float> f;
+                std::vector<double> d;
+                if (!readVecU8(u8)) return false;
+                if (!readVecF(f)) return false;
+                if (!readVecF(f)) return false;
+                if (!readVecF(f)) return false;
+                if (!readVecD(d)) return false;
+
+                if (!readVecD(d)) return false;
+                if (!readVecF(f)) return false;
+                if (!readVecU8(u8)) return false;
+
+                if (!readVecU8(u8)) return false;
+                if (!readVecF(f)) return false;
+                if (!readVecD(d)) return false;
+                if (!readVecF(f)) return false;
                 continue;
             }
 
@@ -536,15 +524,33 @@ namespace {
             if (!readVecF(e.blockUntilH)) return false;
             if (!readVecD(e.blockUntilRtS)) return false;
 
-            if (version >= 3) {
-                if (!readMapD(e.reactBlockUntilRtS)) return false;
-                if (!readMapF(e.reactBlockUntilH)) return false;
-                if (!readMapU8(e.inReaction)) return false;
-            } else {
-                e.reactBlockUntilRtS.clear();
-                e.reactBlockUntilH.clear();
-                e.inReaction.clear();
-            }
+            if (!readVecD(e.reactCdRtS)) return false;
+            if (!readVecF(e.reactCdH)) return false;
+            if (!readVecU8(e.inReaction)) return false;
+
+            if (!readVecU8(e.preActive)) return false;
+            if (!readVecF(e.preIntensity)) return false;
+            if (!readVecD(e.preExpireRtS)) return false;
+            if (!readVecF(e.preExpireH)) return false;
+
+            padU8(e.v, nE);
+            padF(e.lastHitH, nE);
+            padF(e.lastEvalH, nE);
+            padF(e.blockUntilH, nE);
+            padD(e.blockUntilRtS, nE);
+
+            padD(e.reactCdRtS, nR);
+            padF(e.reactCdH, nR);
+            padU8(e.inReaction, nR);
+
+            padU8(e.preActive, nP);
+            padF(e.preIntensity, nP);
+            padD(e.preExpireRtS, nP);
+            padF(e.preExpireH, nP);
+
+            e.effMult.assign(nE, 1.0);
+            e.effDirty = true;
+            e.sized = true;
 
             m[newID] = std::move(e);
         }
@@ -562,7 +568,7 @@ void ElementalGauges::Add(RE::Actor* a, ERF_ElementHandle elem, int delta) {
 
     const auto i = Gauges::idx(elem);
     const float nowH = NowHours();
-    const double nowRt = /* NowRealSeconds() abaixo já existe no arquivo */ NowRealSeconds();
+    const double nowRt = NowRealSeconds();
 
     Gauges::tickAll(e, nowH);
 
@@ -627,20 +633,21 @@ void ElementalGauges::ForEachDecayed(const std::function<void(RE::FormID, Totals
 
     for (auto it = m.begin(); it != m.end();) {
         auto& e = it->second;
+
         Gauges::tickAll(e, nowH);
 
-        const std::size_t begin = Gauges::firstIndex();
-        const std::size_t n = e.v.size();
-        const std::size_t count = (n > begin) ? (n - begin) : 0;
+        const std::size_t beginE = Gauges::firstIndex();
+        const std::size_t nE = e.v.size();
+        const std::size_t countE = (nE > beginE) ? (nE - beginE) : 0;
 
-        TL_totals.resize(count);
+        TL_totals.resize(countE);
 
         bool anyVal = false;
         bool anyElemLock = false;
         bool anyReactCd = false;
         bool anyReactFlag = false;
 
-        for (std::size_t i = begin, j = 0; i < n; ++i, ++j) {
+        for (std::size_t i = beginE, j = 0; i < nE; ++i, ++j) {
             const auto v = e.v[i];
             TL_totals[j] = v;
             anyVal |= (v > 0);
@@ -652,27 +659,37 @@ void ElementalGauges::ForEachDecayed(const std::function<void(RE::FormID, Totals
             }
         }
 
-        if (!e.reactBlockUntilH.empty())
-            for (const auto& kv : e.reactBlockUntilH) {
-                if (kv.second > nowH) {
+        const std::size_t beginR = Gauges::firstIndex();
+
+        if (!anyReactCd && !e.reactCdH.empty()) {
+            const std::size_t nR = e.reactCdH.size();
+            for (std::size_t ri = beginR; ri < nR; ++ri) {
+                if (e.reactCdH[ri] > nowH) {
                     anyReactCd = true;
                     break;
                 }
             }
-        if (!anyReactCd && !e.reactBlockUntilRtS.empty())
-            for (const auto& kv : e.reactBlockUntilRtS) {
-                if (kv.second > nowRt) {
+        }
+
+        if (!anyReactCd && !e.reactCdRtS.empty()) {
+            const std::size_t nR = e.reactCdRtS.size();
+            for (std::size_t ri = beginR; ri < nR; ++ri) {
+                if (e.reactCdRtS[ri] > nowRt) {
                     anyReactCd = true;
                     break;
                 }
             }
-        if (!e.inReaction.empty())
-            for (const auto& kv : e.inReaction) {
-                if (kv.second != 0) {
+        }
+
+        if (!e.inReaction.empty()) {
+            const std::size_t nR = e.inReaction.size();
+            for (std::size_t ri = beginR; ri < nR; ++ri) {
+                if (e.inReaction[ri] != 0) {
                     anyReactFlag = true;
                     break;
                 }
             }
+        }
 
         if (!anyVal && !anyElemLock && !anyReactCd && !anyReactFlag) {
             it = m.erase(it);
@@ -696,45 +713,51 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudIconDecay
     if (it == m.end()) return std::nullopt;
 
     auto& e = it->second;
+
     const float nowH = NowHours();
+    const double nowRt = NowRealSeconds();
+
     Gauges::tickAll(e, nowH);
 
     HudGaugeBundle bundle{};
-    const std::size_t begin = Gauges::firstIndex();
-    const std::size_t n = e.v.size();
-    const std::size_t count = (n > begin) ? (n - begin) : 0;
 
-    TL_vals32.resize(count);
-    TL_cols32.resize(count);
+    const std::size_t beginE = Gauges::firstIndex();
+    const std::size_t nE = e.v.size();
+    const std::size_t countE = (nE > beginE) ? (nE - beginE) : 0;
+
+    TL_vals32.resize(countE);
+    TL_cols32.resize(countE);
 
     const auto colors = GetColorLUT();
-    for (std::size_t i = begin, j = 0; i < n; ++i, ++j) {
+
+    for (std::size_t i = beginE, j = 0; i < nE; ++i, ++j) {
         TL_vals32[j] = static_cast<std::uint32_t>(e.v[i]);
         TL_cols32[j] = (i < colors.size()) ? colors[i] : 0xFFFFFFu;
     }
+
     bundle.values = std::span<const std::uint32_t>(TL_vals32.data(), TL_vals32.size());
     bundle.colors = std::span<const std::uint32_t>(TL_cols32.data(), TL_cols32.size());
 
     const bool anyVal = std::any_of(bundle.values.begin(), bundle.values.end(), [](std::uint32_t v) { return v > 0; });
 
     if (!anyVal) {
-        const double nowRt = NowRealSeconds();
-
-        const bool anyElemLock = std::any_of(e.blockUntilH.begin() + Gauges::firstIndex(), e.blockUntilH.end(),
-                                             [&](float x) { return x > nowH; }) ||
-                                 std::any_of(e.blockUntilRtS.begin() + Gauges::firstIndex(), e.blockUntilRtS.end(),
-                                             [&](double x) { return x > nowRt; });
+        const bool anyElemLock = std::any_of(e.blockUntilH.begin() + std::min(beginE, e.blockUntilH.size()),
+                                             e.blockUntilH.end(), [&](float x) { return x > nowH; }) ||
+                                 std::any_of(e.blockUntilRtS.begin() + std::min(beginE, e.blockUntilRtS.size()),
+                                             e.blockUntilRtS.end(), [&](double x) { return x > nowRt; });
 
         bool anyReactCd = false;
-        for (const auto& kv : e.reactBlockUntilH) {
-            if (kv.second > nowH) {
-                anyReactCd = true;
-                break;
+        if (!e.reactCdH.empty()) {
+            for (std::size_t ri = Gauges::firstIndex(); ri < e.reactCdH.size(); ++ri) {
+                if (e.reactCdH[ri] > nowH) {
+                    anyReactCd = true;
+                    break;
+                }
             }
         }
-        if (!anyReactCd) {
-            for (const auto& kv : e.reactBlockUntilRtS) {
-                if (kv.second > nowRt) {
+        if (!anyReactCd && !e.reactCdRtS.empty()) {
+            for (std::size_t ri = Gauges::firstIndex(); ri < e.reactCdRtS.size(); ++ri) {
+                if (e.reactCdRtS[ri] > nowRt) {
                     anyReactCd = true;
                     break;
                 }
@@ -742,22 +765,27 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudIconDecay
         }
 
         bool anyReactFlag = false;
-        for (const auto& kv : e.inReaction) {
-            if (kv.second != 0) {
-                anyReactFlag = true;
-                break;
+        if (!e.inReaction.empty()) {
+            for (std::size_t ri = Gauges::firstIndex(); ri < e.inReaction.size(); ++ri) {
+                if (e.inReaction[ri] != 0) {
+                    anyReactFlag = true;
+                    break;
+                }
             }
         }
 
-        if (!anyElemLock && !anyReactCd && !anyReactFlag) m.erase(it);
+        if (!anyElemLock && !anyReactCd && !anyReactFlag) {
+            m.erase(it);
+        }
         return std::nullopt;
     }
 
-    TL_totals8.resize(count);
+    TL_totals8.resize(countE);
     TL_present.clear();
-    TL_present.reserve(count);
+    TL_present.reserve(countE);
+
     int sumAll = 0;
-    for (std::size_t i = Gauges::firstIndex(), j = 0; i < e.v.size(); ++i, ++j) {
+    for (std::size_t i = beginE, j = 0; i < nE; ++i, ++j) {
         const auto v = e.v[i];
         TL_totals8[j] = v;
         sumAll += v;
@@ -767,6 +795,7 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudIconDecay
     if (sumAll > 0) {
         auto& RR = ReactionRegistry::get();
         const float invSum = 1.0f / static_cast<float>(sumAll);
+
         if (auto rh = RR.pickBestFast(TL_totals8, TL_present, sumAll, invSum)) {
             if (const ERF_ReactionDesc* rd = RR.get(*rh)) {
                 if (!rd->hud.iconPath.empty()) {
@@ -792,7 +821,7 @@ void ElementalGauges::InvalidateStateMultipliers(RE::Actor* a) {
 }
 
 void ElementalGauges::BuildColorLUTOnce() {
-    auto& ER = ElementRegistry::get();
+    auto const& ER = ElementRegistry::get();
     const std::size_t n = ER.size() + 1;
     g_colorLUT.resize(n, 0xFFFFFFu);
     for (std::size_t i = 1; i < n; ++i) {

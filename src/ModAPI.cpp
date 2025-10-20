@@ -24,6 +24,7 @@ namespace {
         StateRegistry::get().freeze();
         ElementRegistry::get().freeze();
         ReactionRegistry::get().freeze();
+        PreEffectRegistry::get().freeze();
 
         ElementalGauges::BuildColorLUTOnce();
 

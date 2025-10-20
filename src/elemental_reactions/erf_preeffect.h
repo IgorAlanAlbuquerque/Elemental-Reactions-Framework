@@ -38,8 +38,15 @@ public:
 
     std::span<const ERF_PreEffectHandle> listByElement(ERF_ElementHandle h) const;
 
+    // === NOVO: congelamento e introspecção ===
+    void freeze();  // sela o registry (impede novos registros)
+    bool isFrozen() const noexcept { return _frozen; }
+    std::size_t size() const noexcept { return (_effects.size() > 0) ? (_effects.size() - 1) : 0; }
+
 private:
     PreEffectRegistry() = default;
+
     std::vector<ERF_PreEffectDesc> _effects;
     std::vector<std::vector<ERF_PreEffectHandle>> _byElem;
+    bool _frozen = false;
 };

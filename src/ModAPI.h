@@ -9,6 +9,7 @@ namespace ERF::API {
         std::uint16_t numElements{0};
         std::uint16_t numStates{0};
         std::uint16_t numReactions{0};
+        std::uint16_t numPreEffects{0};
         bool ready{false};
     };
 
