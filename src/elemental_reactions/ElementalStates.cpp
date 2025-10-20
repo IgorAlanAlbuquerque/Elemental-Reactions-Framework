@@ -25,7 +25,7 @@ namespace {
 
     bool Save(SKSE::SerializationInterface* ser, bool dryRun) {
         if (dryRun) {
-            return !g_store.empty();  // só abre record se houver atores/estados
+            return !g_store.empty();
         }
         const auto countActors = static_cast<std::uint32_t>(g_store.size());
         if (!ser->WriteRecordData(&countActors, sizeof(countActors))) return false;
@@ -86,7 +86,6 @@ namespace {
             return true;
         }
 
-        spdlog::warn("[ElementalStates] Unknown serialization version {}. Clearing store.", version);
         g_store.clear();
         return false;
     }

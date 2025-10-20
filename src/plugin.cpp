@@ -120,7 +120,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* sks
     spdlog::info("Store de medidores elementais registrado.");
 
     if (const auto mi = SKSE::GetMessagingInterface()) {
-        mi->RegisterListener(GlobalMessageHandler);  // apenas ciclo de vida
+        mi->RegisterListener(GlobalMessageHandler);
         spdlog::info("Messaging listener (ciclo de vida) registrado.");
     }
 

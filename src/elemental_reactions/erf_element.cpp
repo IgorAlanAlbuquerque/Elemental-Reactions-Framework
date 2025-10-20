@@ -10,7 +10,6 @@ ElementRegistry& ElementRegistry::get() {
 
 ERF_ElementHandle ElementRegistry::registerElement(const ERF_ElementDesc& d) {
     if (_frozen) {
-        spdlog::error("[ERF][ElementRegistry] registerElement após freeze()");
         return 0;
     }
     if (_elems.empty()) _elems.emplace_back("", 0, nullptr);
@@ -20,7 +19,6 @@ ERF_ElementHandle ElementRegistry::registerElement(const ERF_ElementDesc& d) {
 
 void ElementRegistry::freeze() {
     if (_frozen) return;
-    // garante sentinela
     if (_elems.empty()) _elems.emplace_back("", 0, nullptr);
 
     _nameIndex.clear();
@@ -28,7 +26,6 @@ void ElementRegistry::freeze() {
     _nameIndex.reserve(_elems.size());
     _kwIndex.reserve(_elems.size());
 
-    // constrói índices a partir do armazenamento estável do vetor
     const std::size_t cap = StateRegistry::get().size() + 1;
     for (ERF_ElementHandle h = 1; h <= static_cast<ERF_ElementHandle>(size()); ++h) {
         auto& d = _elems[static_cast<std::size_t>(h)];
@@ -52,7 +49,6 @@ std::optional<ERF_ElementHandle> ElementRegistry::findByName(std::string_view na
         if (it != _nameIndex.end()) return it->second;
         return std::nullopt;
     }
-    // caminho antigo (pré-freeze)
     const auto n = static_cast<ERF_ElementHandle>(this->size());
     for (ERF_ElementHandle h = 1; h <= n; ++h) {
         const ERF_ElementDesc* d = this->get(h);

@@ -5,26 +5,44 @@ class ERF_Gauge extends MovieClip
   // ====== container raíz ======
   private var gauge_mc:MovieClip;
 
-  // ====== geometria/layout ======
-  private var rOut:Number       = 7;
-  private var strokePx:Number   = 1.5;
-  private var iconPadPx:Number  = 0.5;
-  private var iconNudgeX:Number = 0;
-  private var iconNudgeY:Number = 0;
+  // ====== geometria/layout (apenas DECLARA; inicializa no ctor) ======
+  private var rOut:Number;
+  private var strokePx:Number;
+  private var iconPadPx:Number;
+  private var iconNudgeX:Number;
+  private var iconNudgeY:Number;
 
   // Spacing equivalente ao C++: base -40 e +40 por slot
-  private var _slotSpacingPx:Number   = 40;
-  private var _slotBaseOffsetX:Number = -40;
-  private var _slotScale:Number       = 1.0;
+  private var _slotSpacingPx:Number;
+  private var _slotBaseOffsetX:Number;
+  private var _slotScale:Number;
 
   // ====== estado ======
-  private var _ready:Boolean = false;
-  private var _tried:Boolean = false;
+  private var _ready:Boolean;
+  private var _tried:Boolean;
 
-  // slots dinâmicos (cada um com halo/anel/icon próprios)
-  private var _slotMcs:Array = [];
+  // slots dinâmicos (cada um com halo/anel/icon próprios) — per-instância!
+  private var _slotMcs:Array;
 
-  function ERF_Gauge(){}
+  // ================= ctor =================
+  function ERF_Gauge()
+  {
+    // — todos os “defaults” por instância —
+    rOut        = 7;
+    strokePx    = 1.5;
+    iconPadPx   = 0.5;
+    iconNudgeX  = 0;
+    iconNudgeY  = 0;
+
+    _slotSpacingPx   = 40;
+    _slotBaseOffsetX = -40;
+    _slotScale       = 1.0;
+
+    _ready = false;
+    _tried = false;
+
+    _slotMcs = [];
+  }
 
   // ---------- utils ----------
   private function _sum(a:Array):Number {
@@ -74,7 +92,9 @@ class ERF_Gauge extends MovieClip
     var off:Number = rOut + 2;
 
     if (gauge_mc) gauge_mc.removeMovieClip();
-    gauge_mc = this.createEmptyMovieClip("gauge_mc", 100);
+    // Usa depth livre local da instância (evita conflitos internos)
+    var d:Number = this.getNextHighestDepth();
+    gauge_mc = this.createEmptyMovieClip("gauge_mc", d);
     gauge_mc._x = off;
     gauge_mc._y = off;
 
@@ -97,7 +117,8 @@ class ERF_Gauge extends MovieClip
   private function _ensureSlot(i:Number):MovieClip {
     if (_slotMcs[i]) return _slotMcs[i];
 
-    var slot:MovieClip = gauge_mc.createEmptyMovieClip("slot_"+i, 200 + i);
+    var slotDepth:Number = 200 + i; // prof. local ao gauge_mc; OK entre instâncias
+    var slot:MovieClip = gauge_mc.createEmptyMovieClip("slot_"+i, slotDepth);
     slot._xscale = slot._yscale = _slotScale * 100;
 
     // subcamadas
@@ -128,38 +149,36 @@ class ERF_Gauge extends MovieClip
     if (slot.icon_mc) slot.icon_mc.removeMovieClip();
     slot.icon_mc = slot.createEmptyMovieClip("icon_mc", 40);
 
-    if (rgb == undefined || isNaN(rgb)) rgb = 0xFFFFFF;
-    var r:Number = (rgb >> 16) & 0xFF;
-    var g:Number = (rgb >> 8)  & 0xFF;
-    var b:Number = (rgb)       & 0xFF;
+    var tint:Number = (isNaN(rgb) || rgb == undefined) ? 0xFFFFFF : Number(rgb);
+    var p:String = (path && path.length > 0) ? String(path) : "img://textures/erf/icons/icon_fire.dds";
+    p = p.split("\\").join("/").toLowerCase();
 
-    if (path && path.substr(0,6) == "img://") {
-      slot.icon_mc.loadMovie(path);
-      var self:ERF_Gauge = this;
-      var tries:Number = 0;
-      slot.icon_mc.onEnterFrame = function():Void {
-        if (++tries > 60) { delete this.onEnterFrame; } // ~1s timeout
-        if (this._width > 0 && this._height > 0) {
-          var side:Number = (self.rOut*2) - (self.strokePx*2) - (self.iconPadPx*2);
-          this._width  = side; this._height = side;
-          this._x = -side/2 + self.iconNudgeX;
-          this._y = -side/2 + self.iconNudgeY;
-          this.cacheAsBitmap = true;
+    var mcl:MovieClipLoader = new MovieClipLoader();
+    var self:ERF_Gauge = this;
 
-          var c:Color = new Color(this);
-          c.setTransform({
-            ra: (r*100/255), ga: (g*100/255), ba: (b*100/255), aa:100,
-            rb:0, gb:0, bb:0, ab:0
-          });
-          delete this.onEnterFrame;
-        }
-      };
-    }
+    var lsn:Object = {};
+    lsn.onLoadInit = function(mc:MovieClip):Void {
+      var side:Number = (self.rOut * 2) - (self.strokePx * 2) - (self.iconPadPx * 2);
+      mc._width  = side;
+      mc._height = side;
+      mc._x = -side/2 + self.iconNudgeX;
+      mc._y = -side/2 + self.iconNudgeY;
+      mc.cacheAsBitmap = true;
+
+      var c:Color = new Color(mc);
+      c.setRGB(tint);
+    };
+    lsn.onLoadError = function(mc:MovieClip, err:Number, http:Number):Void {
+      var c:Color = new Color(mc);
+      c.setRGB(0xFF00FF);
+    };
+
+    mcl.addListener(lsn);
+    mcl.loadClip(p, slot.icon_mc);
   }
 
   private function _slotDrawCombo(slot:MovieClip, frac:Number, rgb:Number):Void {
     var f:Number = (isNaN(frac)) ? 0 : Math.max(0, Math.min(1, frac));
-    // anel de fundo (preto ~30%)
     slot.ring_bg_mc.clear();
     _drawArc(slot.ring_bg_mc, 0, 1, 0x000000, 30);
 
@@ -207,7 +226,7 @@ class ERF_Gauge extends MovieClip
 
   // ============ API batelada ============
   public function setAll(comboIconPaths:Array, comboRemain01:Array, comboTints:Array,
-                        accumIconPath:String, accumValues:Array, accumColors:Array, accumTint:Number):Boolean
+                         accumIconPath:String, accumValues:Array, accumColors:Array, accumTint:Number):Boolean
   {
     if (!_ready) _tryInit();
 
@@ -231,7 +250,7 @@ class ERF_Gauge extends MovieClip
       slot._visible = true;
     }
 
-    // esconder sobras
+    // desliga/limpa slots “sobrando”
     for (var j:Number = n; j < _slotMcs.length; ++j) {
       if (_slotMcs[j]) { _slotClear(_slotMcs[j]); _slotMcs[j]._visible = false; }
     }

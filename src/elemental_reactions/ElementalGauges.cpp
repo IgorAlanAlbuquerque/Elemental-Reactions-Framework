@@ -40,43 +40,44 @@ namespace Gauges {
         std::unordered_map<ERF_ReactionHandle, double> reactBlockUntilRtS;
         std::unordered_map<ERF_ReactionHandle, float> reactBlockUntilH;
         std::unordered_map<ERF_ReactionHandle, std::uint8_t> inReaction;
+
         std::unordered_set<ERF_PreEffectHandle> preActive;
         std::unordered_map<ERF_PreEffectHandle, float> preLastIntensity;
         std::unordered_map<ERF_PreEffectHandle, double> preExpireRtS;
         std::unordered_map<ERF_PreEffectHandle, float> preExpireH;
+
         std::vector<double> effMult;
         bool effDirty = true;
+
+        bool sized = false;
     };
 
     using Map = std::unordered_map<RE::FormID, Entry>;
-
     inline Map& state() noexcept {
-        static Map m;  // NOSONAR estado gerenciado de forma centralizada
+        static Map m;
         return m;
     }
 
+    inline std::size_t firstIndex() { return kReserveZero ? 1u : 0u; }
     inline std::size_t idx(ERF_ElementHandle h) { return static_cast<std::size_t>(h == 0 ? 1 : h); }
 
-    inline std::size_t firstIndex() { return kReserveZero ? 1u : 0u; }
+    inline void initEntryDenseIfNeeded(Entry& e) {
+        if (e.sized) return;
+        const auto& caps = ERF::API::Caps();
+        const std::size_t need = static_cast<std::size_t>(caps.numElements) + (kReserveZero ? 1u : 0u);
 
-    inline std::size_t elemCount() { return ElementRegistry::get().size() + 1; }
+        e.v.assign(need, 0);
+        e.lastHitH.assign(need, 0.f);
+        e.lastEvalH.assign(need, 0.f);
+        e.blockUntilH.assign(need, 0.f);
+        e.blockUntilRtS.assign(need, 0.0);
+        e.effMult.assign(need, 1.0);
 
-    inline void ensureSized(Entry& e) {
-        const auto need = elemCount();
-        if (e.v.size() < need) {
-            e.v.resize(need, 0);
-            e.lastHitH.resize(need, 0.f);
-            e.lastEvalH.resize(need, 0.f);
-            e.blockUntilH.resize(need, 0.f);
-            e.blockUntilRtS.resize(need, 0.0);
-            e.effMult.resize(need, 1.0);
-            e.effDirty = true;
-        }
+        e.effDirty = true;
+        e.sized = true;
     }
 
     inline void tickOne(Entry& e, std::size_t i, float nowH) {
-        if (i >= e.v.size()) return;
-
         auto& val = e.v[i];
         auto& eval = e.lastEvalH[i];
         const float hit = e.lastHitH[i];
@@ -112,7 +113,6 @@ namespace Gauges {
     }
 
     inline void tickAll(Entry& e, float nowH) {
-        ensureSized(e);
         const auto n = e.v.size();
         for (std::size_t i = firstIndex(); i < n; ++i) {
             tickOne(e, i, nowH);
@@ -187,8 +187,8 @@ namespace {
         TL_present.reserve(count);
         int sumAll = 0;
         for (std::size_t i = begin, j = 0; i < n; ++i, ++j) {
-            const auto v = e.v[i];  // já 0..100 (uint8_t)
-            TL_totals8[j] = v;      // atribuição direta, sem push_back
+            const auto v = e.v[i];
+            TL_totals8[j] = v;
             sumAll += v;
             if (v > 0) TL_present.push_back(static_cast<ERF_ElementHandle>(i));
         }
@@ -224,7 +224,6 @@ namespace {
         if (r->cb && a) {
             auto* tasks = SKSE::GetTaskInterface();
             if (!tasks) {
-                spdlog::warn("[ERF] TaskInterface indisponível; reação '{}' não disparada.", r->name);
                 return true;
             }
             RE::ActorHandle h = a->CreateRefHandle();
@@ -341,24 +340,20 @@ namespace {
     }
 
     inline void RecomputeEffMultipliers(RE::Actor* a, Gauges::Entry& e) {
-        using Elem = ERF_ElementHandle;
         auto& ER = ElementRegistry::get();
 
         const auto begin = Gauges::firstIndex();
         const auto n = e.v.size();
 
-        // 1) zera p/ 1.0
-        if (e.effMult.size() < n) e.effMult.resize(n, 1.0);
+        // já dimensionado: só reset
         std::fill(e.effMult.begin() + begin, e.effMult.begin() + n, 1.0);
 
-        // 2) pega estados ativos do ator
-        const auto active = ElementalStates::GetActive(a);  // API já existente
+        const auto active = ElementalStates::GetActive(a);
         if (active.empty()) {
             e.effDirty = false;
             return;
-        }  // nada a aplicar
+        }
 
-        // 3) para cada elemento, aplica multiplicadores dos estados ativos
         for (std::size_t i = begin; i < n; ++i) {
             const Elem h = static_cast<Elem>(i);
             if (const ERF_ElementDesc* ed = ER.get(h)) {
@@ -383,7 +378,6 @@ namespace {
     static bool Save(SKSE::SerializationInterface* ser, bool dryRun) {
         const auto& m = Gauges::state();
         if (dryRun) {
-            // só diz se há algo a salvar (evita abrir record vazio)
             return !m.empty();
         }
         const std::uint32_t count = static_cast<std::uint32_t>(m.size());
@@ -564,52 +558,45 @@ void ElementalGauges::Add(RE::Actor* a, ERF_ElementHandle elem, int delta) {
     if (!a || delta <= 0) return;
 
     auto& e = Gauges::state()[a->GetFormID()];
-    Gauges::ensureSized(e);
+    Gauges::initEntryDenseIfNeeded(e);
 
     const auto i = Gauges::idx(elem);
     const float nowH = NowHours();
-    const double nowRt = NowRealSeconds();
+    const double nowRt = /* NowRealSeconds() abaixo já existe no arquivo */ NowRealSeconds();
 
     Gauges::tickAll(e, nowH);
 
-    if (i < e.blockUntilH.size() && (nowH < e.blockUntilH[i] || nowRt < e.blockUntilRtS[i])) {
+    if (nowH < e.blockUntilH[i] || nowRt < e.blockUntilRtS[i]) {
         return;
     }
-
     if (e.effDirty) {
         RecomputeEffMultipliers(a, e);
     }
 
-    const int before = (i < e.v.size()) ? e.v[i] : 0;
-
-    const double scaled = std::round(static_cast<double>(delta) * ((i < e.effMult.size()) ? e.effMult[i] : 1.0));
+    const int before = e.v[i];
+    const double scaled = std::round(static_cast<double>(delta) * e.effMult[i]);
     const int adj = (scaled <= 0.0) ? 0 : static_cast<int>(scaled);
-
     const int afterI = std::clamp(before + adj, 0, 100);
 
-    if (i < e.v.size()) {
-        const int sumBefore = SumAll(e);
-        e.v[i] = static_cast<std::uint8_t>(afterI);
-        e.lastHitH[i] = nowH;
-        e.lastEvalH[i] = nowH;
+    const int sumBefore = SumAll(e);
+    e.v[i] = static_cast<std::uint8_t>(afterI);
+    e.lastHitH[i] = nowH;
+    e.lastEvalH[i] = nowH;
 
-        if (const int sumAfter = SumAll(e); sumBefore < 100 && sumAfter >= 100) MaybeTriggerReaction(a, e);
-        (void)MaybeTriggerPreEffectsFor(a, e, elem, static_cast<std::uint8_t>(afterI));
+    if (const int sumAfter = SumAll(e); sumBefore < 100 && sumAfter >= 100) {
+        MaybeTriggerReaction(a, e);
     }
+    (void)MaybeTriggerPreEffectsFor(a, e, elem, static_cast<std::uint8_t>(afterI));
 }
 
 std::uint8_t ElementalGauges::Get(RE::Actor* a, ERF_ElementHandle elem) {
     if (!a) return 0;
-    auto& m = Gauges::state();
-    auto it = m.find(a->GetFormID());
-    if (it == m.end()) return 0;
-
+    auto it = Gauges::state().find(a->GetFormID());
+    if (it == Gauges::state().end()) return 0;
     auto& e = it->second;
-    Gauges::ensureSized(e);
+    if (!e.sized) Gauges::initEntryDenseIfNeeded(e);
 
     const auto i = Gauges::idx(elem);
-    if (i >= e.v.size()) return 0;
-
     Gauges::tickOne(e, i, NowHours());
     return e.v[i];
 }
@@ -617,11 +604,9 @@ std::uint8_t ElementalGauges::Get(RE::Actor* a, ERF_ElementHandle elem) {
 void ElementalGauges::Set(RE::Actor* a, ERF_ElementHandle elem, std::uint8_t value) {
     if (!a) return;
     auto& e = Gauges::state()[a->GetFormID()];
-    Gauges::ensureSized(e);
+    Gauges::initEntryDenseIfNeeded(e);
 
     const auto i = Gauges::idx(elem);
-    if (i >= e.v.size()) return;
-
     const float nowH = NowHours();
     Gauges::tickOne(e, i, nowH);
 
@@ -657,7 +642,7 @@ void ElementalGauges::ForEachDecayed(const std::function<void(RE::FormID, Totals
 
         for (std::size_t i = begin, j = 0; i < n; ++i, ++j) {
             const auto v = e.v[i];
-            TL_totals[j] = v;  // 0..100 já está clampado em quem escreve
+            TL_totals[j] = v;
             anyVal |= (v > 0);
 
             if (!anyElemLock) {
@@ -690,7 +675,7 @@ void ElementalGauges::ForEachDecayed(const std::function<void(RE::FormID, Totals
             }
 
         if (!anyVal && !anyElemLock && !anyReactCd && !anyReactFlag) {
-            it = m.erase(it);  // entrada “morta” some do mapa
+            it = m.erase(it);
             continue;
         }
 
@@ -800,16 +785,17 @@ void ElementalGauges::RegisterStore() { Ser::Register({Gauges::kRecordID, Gauges
 
 void ElementalGauges::InvalidateStateMultipliers(RE::Actor* a) {
     if (!a) return;
-    auto& e = Gauges::state()[a->GetFormID()];
-    Gauges::ensureSized(e);
-    e.effDirty = true;
+    auto& m = Gauges::state();
+    const auto it = m.find(a->GetFormID());
+    if (it == m.end()) return;
+    it->second.effDirty = true;
 }
 
 void ElementalGauges::BuildColorLUTOnce() {
     auto& ER = ElementRegistry::get();
-    const std::size_t n = ER.size() + 1;  // respeitando o "slot zero" reservado
+    const std::size_t n = ER.size() + 1;
     g_colorLUT.resize(n, 0xFFFFFFu);
-    for (std::size_t i = 1; i < n; ++i) {  // começa em 1
+    for (std::size_t i = 1; i < n; ++i) {
         if (const ERF_ElementDesc* d = ER.get(static_cast<ERF_ElementHandle>(i))) {
             g_colorLUT[i] = d->colorRGB;
         }

@@ -32,7 +32,6 @@ namespace {
 
         static constexpr std::size_t idx(const K& k) noexcept { return std::hash<K>{}(k) & (N - 1); }
 
-        // Leitura (compartilhada)
         std::optional<V> get(const K& k) const {
             auto& s = stripes[idx(k)];
             std::shared_lock lk(s.mx);
@@ -41,23 +40,20 @@ namespace {
             return it->second;
         }
 
-        // Escrever/atualizar
         template <class F>
         void upsert(const K& k, F&& f) {
             auto& s = stripes[idx(k)];
             std::unique_lock lk(s.mx);
-            if (s.map.empty()) s.map.reserve(64);  // reserva mínima por stripe
-            f(s.map);                              // lambda recebe map& e faz emplace/assign/erase
+            if (s.map.empty()) s.map.reserve(64);
+            f(s.map);
         }
 
-        // Remover
         void erase(const K& k) {
             auto& s = stripes[idx(k)];
             std::unique_lock lk(s.mx);
             s.map.erase(k);
         }
 
-        // erase_if — útil para g_ctx (match por uid/target)
         template <class Pred>
         void erase_if(Pred&& p) {
             for (auto& s : stripes) {
@@ -75,6 +71,7 @@ namespace GaugesHook {
     static RE::EffectSetting* g_mgefGaugeAcc = nullptr;
 
     static StripedMap<std::uint64_t, double, 64> g_lastAccHint;
+    static StripedMap<std::uint64_t, std::uint16_t, 64> g_lastAccCarrierUID;
 
     struct EffCtx {
         RE::ActorHandle target;
@@ -165,9 +162,14 @@ namespace GaugesHook {
                     }
                     return true;
                 });
+
                 if (tgt) {
                     const auto key = KeyActorOnly(tgt);
-                    g_lastAccHint.erase(key);
+                    const auto removedUID = static_cast<std::uint16_t>(uid);
+                    if (auto carrierUID = g_lastAccCarrierUID.get(key); carrierUID && *carrierUID == removedUID) {
+                        g_lastAccHint.erase(key);
+                        g_lastAccCarrierUID.erase(key);
+                    }
                 }
             }
             return RE::BSEventNotifyControl::kContinue;
@@ -177,7 +179,6 @@ namespace GaugesHook {
     inline void RegisterAEEventSinkImpl() {
         if (auto* src = RE::ScriptEventSourceHolder::GetSingleton()) {
             src->AddEventSink<RE::TESActiveEffectApplyRemoveEvent>(AEApplyRemoveSink::GetSingleton());
-            spdlog::info("[Hook] AEApplyRemoveSink registered.");
         }
     }
 
@@ -203,12 +204,14 @@ namespace GaugesHook {
             if (!mgef || !actor) return;
 
             if (IsGaugeAccCarrier(mgef)) {
-                double acc = static_cast<double>(self->magnitude);
+                auto acc = static_cast<double>(self->magnitude);
                 if (acc <= 0.001 && self->effect) {
                     acc = static_cast<double>(self->effect->effectItem.magnitude);
                 }
                 if (acc <= 0.001) acc = 1.0;
-                g_lastAccHint.upsert(KeyActorOnly(actor), [&](auto& mp) { mp[KeyActorOnly(actor)] = acc; });
+                const auto k = KeyActorOnly(actor);
+                g_lastAccHint.upsert(k, [&](auto& mp) { mp[k] = acc; });
+                g_lastAccCarrierUID.upsert(k, [&](auto& mp) { mp[k] = self->usUniqueID; });
                 return;
             }
 
@@ -285,8 +288,8 @@ namespace GaugesHook {
             if (dt > 0.0f) {
                 const auto key = MakeKey(target, elem);
                 g_accum.upsert(key, [&](auto& mp) {
-                    double& acc = mp[key];               // cria 0 no primeiro acesso
-                    if (mp.size() == 1) mp.reserve(64);  // reserva mínima por stripe (primeiro uso)
+                    double& acc = mp[key];
+                    if (mp.size() == 1) mp.reserve(64);
                     acc += accPerSec * static_cast<double>(dt);
                     int whole = static_cast<int>(std::floor(acc));
                     if (whole >= 1) {
@@ -316,7 +319,6 @@ namespace GaugesHook {
     using PVME = RE::PeakValueModifierEffect;
 
     static void InstallAll() {
-        spdlog::info("[Hook] Installing vfunc hooks...");
         StartHook<VME>::Install("ValueModifierEffect");
         UpdateHook<VME>::Install("ValueModifierEffect");
         StartHook<DVME>::Install("DualValueModifierEffect");
@@ -325,7 +327,6 @@ namespace GaugesHook {
         UpdateHook<PVME>::Install("PeakValueModifierEffect");
         StartHook<RE::ActiveEffect>::Install("ActiveEffect");
         UpdateHook<RE::ActiveEffect>::Install("ActiveEffect");
-        spdlog::info("[Hook] All hooks installed.");
     }
 }
 
@@ -364,14 +365,8 @@ void ElementalGaugesHook::StartHUDTick() {
 }
 
 void ElementalGaugesHook::StopHUDTick() { HUD::StopHUDTick(); }
-void ElementalGaugesHook::Install() {
-    spdlog::info("[Hook] Install()");
-    GaugesHook::InstallAll();
-}
-void ElementalGaugesHook::RegisterAEEventSink() {
-    spdlog::info("[Hook] RegisterAEEventSink()");
-    GaugesHook::RegisterAEEventSinkImpl();
-}
+void ElementalGaugesHook::Install() { GaugesHook::InstallAll(); }
+void ElementalGaugesHook::RegisterAEEventSink() { GaugesHook::RegisterAEEventSinkImpl(); }
 
 void ElementalGaugesHook::InitCarrierRefs() {
     using namespace GaugesHook;

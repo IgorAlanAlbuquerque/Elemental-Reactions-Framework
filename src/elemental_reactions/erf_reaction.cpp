@@ -25,7 +25,7 @@ ERF_ReactionHandle ReactionRegistry::registerReaction(const ERF_ReactionDesc& d)
     auto& R = get();
     if (R._reactions.empty()) R._reactions.resize(1);
     R._reactions.push_back(d);
-    R._indexed = false;  // invalida índice
+    R._indexed = false;
     return static_cast<ERF_ReactionHandle>(R._reactions.size() - 1);
 }
 
@@ -40,7 +40,7 @@ ReactionRegistry::Mask ReactionRegistry::makeMask_(const std::vector<ERF_Element
     Mask m = 0;
     for (auto h : elems) {
         if (h == 0) continue;
-        const auto bit = static_cast<unsigned>(h - 1);  // idx começa em 0
+        const auto bit = static_cast<unsigned>(h - 1);
         if (bit < 64) m |= (Mask(1) << bit);
     }
     return m;
@@ -80,16 +80,13 @@ void ReactionRegistry::buildIndex_() const {
     _indexed = true;
 }
 
-void ReactionRegistry::freeze() {
-    buildIndex_();  // só garante que está pronto
-}
+void ReactionRegistry::freeze() { buildIndex_(); }
 
 std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(const std::vector<std::uint8_t>& totals,
                                                                   const std::vector<ERF_ElementHandle>& present,
                                                                   float invSumAll, const ReactionRegistry* self) {
     self->buildIndex_();
 
-    // monta máscara dos presentes
     ReactionRegistry::Mask presentMask = 0;
     for (auto h : present) {
         if (!h) continue;
@@ -102,7 +99,6 @@ std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(const std::vec
     float bestScore = 0.0f;
     std::size_t bestK = 0;
 
-    // percorre apenas submáscaras presentes (buckets)
     for (auto sub = presentMask; sub; sub = (sub - 1) & presentMask) {
         auto it = self->_byMask.find(sub);
         if (it == self->_byMask.end()) continue;
@@ -119,7 +115,6 @@ std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(const std::vec
                 sumSel += v;
                 const float req = self->_minPctEachByH[h];
                 if (req > 0.0f) {
-                    // v / sumAll  ->  v * invSumAll
                     const float p = static_cast<float>(v) * invSumAll;
                     if (p + 1e-6f < req) {
                         okPctEach = false;
@@ -129,7 +124,6 @@ std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(const std::vec
             }
             if (!okPctEach) continue;
 
-            // (sumSel / sumAll) -> sumSel * invSumAll
             const float fracSel = static_cast<float>(sumSel) * invSumAll;
             if (self->_minSumSelByH[h] > 0.0f && fracSel + 1e-6f < self->_minSumSelByH[h]) continue;
 

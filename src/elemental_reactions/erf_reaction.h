@@ -53,11 +53,10 @@ public:
 
 private:
     ReactionRegistry() = default;
-    std::vector<ERF_ReactionDesc> _reactions;  // [0] inválido
+    std::vector<ERF_ReactionDesc> _reactions;
 
     using Mask = std::uint64_t;
 
-    // caches/índices (mutáveis para construir em métodos const)
     mutable bool _indexed = false;
     mutable std::vector<Mask> _maskByH;
     mutable std::vector<std::uint8_t> _kByH;

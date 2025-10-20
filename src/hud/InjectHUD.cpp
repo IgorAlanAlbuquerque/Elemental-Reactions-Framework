@@ -297,12 +297,9 @@ void InjectHUD::AddFor(RE::Actor* actor) {
 
     const auto h = actor->GetHandle();
     g_trueHUD->AddActorInfoBar(h);
-    if (!g_trueHUD->HasInfoBar(h, true) && !IsPlayerActor(actor)) {
-        return;
-    }
 
     auto w = std::make_shared<ERFWidget>();
-    const auto wid = id;
+    const auto wid = uint16_t((id ^ (id >> 16)) | 1);
     g_trueHUD->AddWidget(g_pluginHandle, ERF_WIDGET_TYPE, wid, ERF_SYMBOL_NAME, w);
     w->ProcessDelegates();
     entry.widget = std::move(w);
@@ -327,7 +324,7 @@ void InjectHUD::UpdateFor(RE::Actor* actor) {
         bundleOpt && !bundleOpt->values.empty() &&
         std::any_of(bundleOpt->values.begin(), bundleOpt->values.end(), [](std::uint32_t v) { return v > 0; });
 
-    const int needed = std::clamp<int>(static_cast<int>(actives.size()) + (haveTotals ? 1 : 0), 0, 3);
+    const int needed = static_cast<int>(actives.size()) + (haveTotals ? 1 : 0);
     if (needed == 0) {
         if (w._view) {
             RE::GFxValue vis;
@@ -339,9 +336,6 @@ void InjectHUD::UpdateFor(RE::Actor* actor) {
 
     const auto h = actor->GetHandle();
     g_trueHUD->AddActorInfoBar(h);
-    if (!g_trueHUD->HasInfoBar(h, true) && !IsPlayerActor(actor)) {
-        return;
-    }
 
     std::vector<std::string> comboIconPaths;
     std::vector<double> comboRemain01;
@@ -406,7 +400,7 @@ bool InjectHUD::RemoveFor(RE::FormID id) {
     if (it == widgets.end()) return false;
 
     if (it->second.widget) {
-        const auto wid = id;
+        const auto wid = uint16_t((id ^ (id >> 16)) | 1);
         g_trueHUD->RemoveWidget(g_pluginHandle, ERF_WIDGET_TYPE, wid, TRUEHUD_API::WidgetRemovalMode::Immediate);
         it->second.widget.reset();
     }
@@ -424,7 +418,7 @@ void InjectHUD::RemoveAllWidgets() {
 
     for (const auto& [id, entry] : widgets) {
         if (!entry.widget) continue;
-        const auto wid = id;
+        const auto wid = uint16_t((id ^ (id >> 16)) | 1);
         g_trueHUD->RemoveWidget(g_pluginHandle, ERF_WIDGET_TYPE, wid, TRUEHUD_API::WidgetRemovalMode::Immediate);
     }
     widgets.clear();

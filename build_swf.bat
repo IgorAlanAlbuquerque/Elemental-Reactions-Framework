@@ -33,7 +33,7 @@ if errorlevel 1 (
 ) else (
   if not exist "%TEX_OUT%" mkdir "%TEX_OUT%"
   for %%F in ("%ICON_SRC%\*.png") do (
-    texconv -nologo -y -ft DDS -f DXT5 -dx9 -m 1 -o "%TEX_OUT%" "%%~fF" || goto :err
+    texconv -nologo -y -ft DDS -f DXT5 -dx9 -w 64 -h 64 -m 0 -o "%TEX_OUT%" "%%~fF" || goto :err
   )
 )
 

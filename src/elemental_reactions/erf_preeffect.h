@@ -14,7 +14,6 @@ struct ERF_PreEffectDesc {
     ERF_ElementHandle element = 0;
     std::uint8_t minGauge = 1;
 
-    // floats agrupados
     float durationSeconds = 2.0f;
     float cooldownSeconds = 0.5f;
     float baseIntensity = 0.0f;
@@ -22,7 +21,6 @@ struct ERF_PreEffectDesc {
     float minIntensity = 0.0f;
     float maxIntensity = 1.0f;
 
-    // bools agrupados
     bool durationIsRealTime = true;
     bool cooldownIsRealTime = true;
 
