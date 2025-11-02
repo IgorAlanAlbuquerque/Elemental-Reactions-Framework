@@ -1,6 +1,8 @@
 #include "InjectHUD.h"
 
 #include <algorithm>
+#include <chrono>  // <- para NowRtS()
+#include <cmath>   // <- floor, isnan
 #include <cstdint>
 #include <memory>
 #include <string_view>
@@ -24,16 +26,13 @@ namespace {
 
     inline float NowHours() { return RE::Calendar::GetSingleton()->GetHoursPassed(); }
 
-    static void DrainComboQueueOnUI() {
+    static void DrainComboQueueOnUI(double nowRt, float nowH) {
         std::deque<PendingReaction> take;
         {
             std::scoped_lock lk(g_comboMx);
             take.swap(g_comboQueue);
         }
         if (take.empty()) return;
-
-        const double nowRt = NowRtS();
-        const float nowH = NowHours();
 
         auto& RR = ReactionRegistry::get();
 
@@ -48,17 +47,14 @@ namespace {
             hud.realTime = pr.realTime;
             hud.durationS = pr.secs;
 
-            if (pr.realTime) {
+            if (pr.realTime)
                 hud.endRtS = nowRt + pr.secs;
-            } else {
+            else
                 hud.endH = nowH + (pr.secs / 3600.0f);
-            }
 
             if (const auto* rd = RR.get(pr.reaction)) {
-                hud.iconPath = rd->hud.iconPath;
-                hud.tint = rd->hud.iconTint;
+                hud.tint = rd->Tint;
             } else {
-                hud.iconPath = "img://textures/erf/icons/icon_fire.dds";
                 hud.tint = 0xFFFFFF;
             }
 
@@ -70,21 +66,15 @@ namespace {
         }
     }
 
-    static std::vector<ActiveReactionHUD> GetActiveReactions(RE::FormID id) {
+    std::vector<ActiveReactionHUD> GetActiveReactions(RE::FormID id, double nowRt, float nowH) {
         std::vector<ActiveReactionHUD> out;
         const auto it = combos.find(id);
-        if (it == combos.end()) {
-            return out;
-        }
-
-        const double nowRt = NowRtS();
-        const float nowH = RE::Calendar::GetSingleton()->GetHoursPassed();
+        if (it == combos.end()) return out;
 
         for (const auto& c : it->second) {
             const bool alive = c.realTime ? (nowRt < c.endRtS) : (nowH < c.endH);
             if (alive) out.push_back(c);
         }
-
         return out;
     }
 
@@ -127,6 +117,8 @@ namespace {
     }
 }
 
+// ====================== ERFWidget ======================
+
 void InjectHUD::ERFWidget::Initialize() {
     if (!_view) {
         return;
@@ -141,10 +133,15 @@ void InjectHUD::ERFWidget::Initialize() {
     ResetSmoothing();
     _hadContent = false;
     _lastGaugeRtS = std::numeric_limits<double>::quiet_NaN();
+
+    // Issue 7: inicializa arrays/args persistentes (uma vez)
+    _arraysInit = false;
+    EnsureArrays();
 }
 
 void InjectHUD::ERFWidget::FollowActorHead(RE::Actor* actor) {
     if (!actor || !_view) return;
+
     if (IsPlayerActor(actor)) {
         FollowPlayerFixed(*this);
         return;
@@ -165,11 +162,14 @@ void InjectHUD::ERFWidget::FollowActorHead(RE::Actor* actor) {
         return;
     }
 
+    // Offset vertical seguro (pode ser parametrizado futuramente)
     static constexpr float kWorldOffsetZ = 70.0f;
     world.z += kWorldOffsetZ;
 
+    // Projeção 3D → 2D
     float nx = 0.f, ny = 0.f, depth = 0.f;
     RE::NiCamera::WorldPtToScreenPt3((float (*)[4])g_worldToCamMatrix, *g_viewPort, world, nx, ny, depth, 1e-5f);
+
     if (depth < 0.f || nx < 0.f || nx > 1.f || ny < 0.f || ny > 1.f) {
         RE::GFxValue vis;
         vis.SetBoolean(false);
@@ -182,10 +182,12 @@ void InjectHUD::ERFWidget::FollowActorHead(RE::Actor* actor) {
     const float stageH = rect.bottom - rect.top;
     if (stageW <= 1.f || stageH <= 1.f) return;
 
+    // Conversão de coordenadas
     ny = 1.0f - ny;
     double px = rect.left + stageW * nx;
     double py = rect.top + stageH * ny;
 
+    // Escala baseada em distância
     float scalePct = 100.f;
     if (g_fNear && g_fFar) {
         const float fNear = *g_fNear, fFar = *g_fFar;
@@ -194,14 +196,31 @@ void InjectHUD::ERFWidget::FollowActorHead(RE::Actor* actor) {
         scalePct = (((clamped - 500.f) * (50.f - 100.f)) / (2000.f - 500.f)) + 100.f;
     }
 
+    // Suavização com snapping inicial
+    constexpr double SMOOTH_FACTOR = 0.15;
+    constexpr double MIN_DELTA = 0.25;
+
     if (_needsSnap || std::isnan(_lastX) || std::isnan(_lastY)) {
         _lastX = px;
         _lastY = py;
         _needsSnap = false;
     }
 
+    const double dx = px - _lastX;
+    const double dy = py - _lastY;
+
+    // Interpolação somente se houve variação perceptível
+    if (std::abs(dx) > MIN_DELTA || std::abs(dy) > MIN_DELTA) {
+        px = _lastX + dx * SMOOTH_FACTOR;
+        py = _lastY + dy * SMOOTH_FACTOR;
+    } else {
+        px = _lastX;
+        py = _lastY;
+    }
+
     px = std::floor(px + 0.5);
     py = std::floor(py + 0.5);
+
     RE::GFxValue::DisplayInfo di;
     di.SetPosition(static_cast<float>(px), static_cast<float>(py));
     di.SetScale(scalePct, scalePct);
@@ -215,72 +234,117 @@ void InjectHUD::ERFWidget::FollowActorHead(RE::Actor* actor) {
     _lastY = py;
 }
 
-void InjectHUD::ERFWidget::SetAll(const std::vector<std::string>& comboIconPaths,
-                                  const std::vector<double>& comboRemain01,
-                                  const std::vector<std::uint32_t>& comboTintsRGB, const std::string& accumIconPath,
-                                  const std::vector<double>& accumValues,
-                                  const std::vector<std::uint32_t>& accumColorsRGB, std::uint32_t accumTintRGB) {
-    if (!_view) {
+// ---------- Issue 7: Helpers de reuso de arrays/args ----------
+
+void InjectHUD::ERFWidget::EnsureArrays() {
+    if (!(_view && !_arraysInit)) return;
+
+    _view->CreateArray(&_arrComboRemain);
+    _view->CreateArray(&_arrComboTints);
+    _view->CreateArray(&_arrAccumVals);
+    _view->CreateArray(&_arrAccumCols);
+
+    _args[0] = _arrComboRemain;
+    _args[1] = _arrComboTints;
+    _args[2] = _arrAccumVals;
+    _args[3] = _arrAccumCols;
+
+    _arraysInit = true;
+}
+
+void InjectHUD::ERFWidget::FillArrayDoubles(RE::GFxValue& arr, const std::vector<double>& src) {
+    const std::uint32_t cur = arr.GetArraySize();
+    if (cur != src.size()) {
+        _view->CreateArray(&arr);
+        for (double d : src) {
+            RE::GFxValue v;
+            v.SetNumber(d);
+            arr.PushBack(v);
+        }
         return;
     }
-
-    RE::GFxValue args[7], ret;
-
-    RE::GFxValue arrComboPaths, arrComboRemain, arrComboTints;
-    RE::GFxValue arrAccumVals, arrAccumCols;
-
-    _view->CreateArray(&arrComboPaths);
-    _view->CreateArray(&arrComboRemain);
-    _view->CreateArray(&arrComboTints);
-    _view->CreateArray(&arrAccumVals);
-    _view->CreateArray(&arrAccumCols);
-
-    for (auto& s : comboIconPaths) {
+    for (std::uint32_t i = 0; i < cur; ++i) {
         RE::GFxValue v;
-        v.SetString(s.c_str());
-        arrComboPaths.PushBack(v);
+        v.SetNumber(src[i]);
+        arr.SetElement(i, v);
     }
-    for (auto r : comboRemain01) {
-        RE::GFxValue v;
-        v.SetNumber(r);
-        arrComboRemain.PushBack(v);
-    }
-    for (auto c : comboTintsRGB) {
-        RE::GFxValue v;
-        v.SetNumber(double(c));
-        arrComboTints.PushBack(v);
-    }
+}
 
-    for (auto v2 : accumValues) {
-        RE::GFxValue v;
-        v.SetNumber(v2);
-        arrAccumVals.PushBack(v);
+void InjectHUD::ERFWidget::FillArrayU32AsNumber(RE::GFxValue& arr, const std::vector<std::uint32_t>& src) {
+    const std::uint32_t cur = arr.GetArraySize();
+    if (cur != src.size()) {
+        _view->CreateArray(&arr);
+        for (std::uint32_t u : src) {
+            RE::GFxValue v;
+            v.SetNumber(static_cast<double>(u));
+            arr.PushBack(v);
+        }
+        return;
     }
-    for (auto c2 : accumColorsRGB) {
+    for (std::uint32_t i = 0; i < cur; ++i) {
         RE::GFxValue v;
-        v.SetNumber(double(c2));
-        arrAccumCols.PushBack(v);
+        v.SetNumber(static_cast<double>(src[i]));
+        arr.SetElement(i, v);
     }
+}
 
-    RE::GFxValue accumIcon;
-    accumIcon.SetString(accumIconPath.c_str());
-    RE::GFxValue accumTint;
-    accumTint.SetNumber(double(accumTintRGB));
+void InjectHUD::ERFWidget::ClearAndHide() {
+    if (!_view) return;
 
-    args[0] = arrComboPaths;
-    args[1] = arrComboRemain;
-    args[2] = arrComboTints;
-    args[3] = accumIcon;
-    args[4] = arrAccumVals;
-    args[5] = arrAccumCols;
-    args[6] = accumTint;
+    // Garante arrays/args persistentes
+    EnsureArrays();
 
-    const bool ok = _object.Invoke("setAll", &ret, args, 7);
+    // Recria arrays vazios (ou SetArraySize(0), se a sua SDK suportar)
+    _view->CreateArray(&_arrComboRemain);
+    _view->CreateArray(&_arrComboTints);
+    _view->CreateArray(&_arrAccumVals);
+    _view->CreateArray(&_arrAccumCols);
+
+    // Rebind dos ponteiros dos args (importante: arrays foram recriados)
+    _args[0] = _arrComboRemain;
+    _args[1] = _arrComboTints;
+    _args[2] = _arrAccumVals;
+    _args[3] = _arrAccumCols;
+
+    RE::GFxValue ret;
+    _object.Invoke("setAll", &ret, _args, 4);
+
+    // Agora esconde visualmente
+    RE::GFxValue vis;
+    vis.SetBoolean(false);
+    _object.SetMember("_visible", vis);
+}
+
+// ---------- SetAll com reuso de arrays/args ----------
+
+void InjectHUD::ERFWidget::SetAll(const std::vector<double>& comboRemain01,
+                                  const std::vector<std::uint32_t>& comboTintsRGB,
+                                  const std::vector<double>& accumValues,
+                                  const std::vector<std::uint32_t>& accumColorsRGB) {
+    if (!_view) return;
+
+    // Reusa arrays/args persistentes; recria array apenas se o tamanho mudou
+    EnsureArrays();
+
+    FillArrayDoubles(_arrComboRemain, comboRemain01);
+    FillArrayU32AsNumber(_arrComboTints, comboTintsRGB);
+    FillArrayDoubles(_arrAccumVals, accumValues);
+    FillArrayU32AsNumber(_arrAccumCols, accumColorsRGB);
+
+    _args[0] = _arrComboRemain;
+    _args[1] = _arrComboTints;
+    _args[2] = _arrAccumVals;
+    _args[3] = _arrAccumCols;
+
+    RE::GFxValue ret;
+    const bool ok = _object.Invoke("setAll", &ret, _args, 4);
 
     RE::GFxValue vis;
     vis.SetBoolean(ok);
     _object.SetMember("_visible", vis);
 }
+
+// ====================== API InjectHUD ======================
 
 void InjectHUD::AddFor(RE::Actor* actor) {
     if (!g_trueHUD || !actor) {
@@ -297,38 +361,31 @@ void InjectHUD::AddFor(RE::Actor* actor) {
 
     const auto h = actor->GetHandle();
     g_trueHUD->AddActorInfoBar(h);
-    if (!g_trueHUD->HasInfoBar(h, true) && !IsPlayerActor(actor)) {
-        return;
-    }
 
     auto w = std::make_shared<ERFWidget>();
-    const auto wid = id;
+    const auto wid = static_cast<uint32_t>(actor->GetFormID());
     g_trueHUD->AddWidget(g_pluginHandle, ERF_WIDGET_TYPE, wid, ERF_SYMBOL_NAME, w);
     w->ProcessDelegates();
     entry.widget = std::move(w);
 }
 
-void InjectHUD::UpdateFor(RE::Actor* actor) {
-    if (!g_trueHUD || !actor) {
-        return;
-    }
+void InjectHUD::UpdateFor(RE::Actor* actor, double nowRt, float nowH) {
+    if (!g_trueHUD || !actor) return;
 
     const auto id = actor->GetFormID();
     auto it = widgets.find(id);
-    if (it == widgets.end() || !it->second.widget) {
-        return;
-    }
+    if (it == widgets.end() || !it->second.widget) return;
+
     auto& w = *it->second.widget;
 
-    const auto actives = GetActiveReactions(id);
+    const auto actives = GetActiveReactions(id, nowRt, nowH);
 
-    auto bundleOpt = ElementalGauges::PickHudIconDecayed(id);
+    auto bundleOpt = ElementalGauges::PickHudDecayed(id, nowRt, nowH);
     const bool haveTotals =
         bundleOpt && !bundleOpt->values.empty() &&
         std::any_of(bundleOpt->values.begin(), bundleOpt->values.end(), [](std::uint32_t v) { return v > 0; });
 
-    const int needed = std::clamp<int>(static_cast<int>(actives.size()) + (haveTotals ? 1 : 0), 0, 3);
-    if (needed == 0) {
+    if (const int needed = static_cast<int>(actives.size()) + (haveTotals ? 1 : 0); needed == 0) {
         if (w._view) {
             RE::GFxValue vis;
             vis.SetBoolean(false);
@@ -339,47 +396,35 @@ void InjectHUD::UpdateFor(RE::Actor* actor) {
 
     const auto h = actor->GetHandle();
     g_trueHUD->AddActorInfoBar(h);
-    if (!g_trueHUD->HasInfoBar(h, true) && !IsPlayerActor(actor)) {
-        return;
-    }
 
-    std::vector<std::string> comboIconPaths;
     std::vector<double> comboRemain01;
     std::vector<std::uint32_t> comboTintsRGB;
 
-    comboIconPaths.reserve(std::min<std::size_t>(3, actives.size()));
-    comboRemain01.reserve(comboIconPaths.capacity());
-    comboTintsRGB.reserve(comboIconPaths.capacity());
+    comboRemain01.reserve(comboRemain01.capacity());
+    comboTintsRGB.reserve(comboRemain01.capacity());
 
-    const double nowRt = NowRtS();
-    const float nowH = RE::Calendar::GetSingleton()->GetHoursPassed();
     for (std::size_t i = 0; i < actives.size() && i < 3; ++i) {
         const auto& r = actives[i];
         const double remain = r.realTime ? (r.endRtS - nowRt) : (double(r.endH - nowH) * 3600.0);
         const double denom = std::max(0.001, (double)r.durationS);
         const double frac = std::clamp(remain / denom, 0.0, 1.0);
 
-        comboIconPaths.push_back(r.iconPath);
         comboRemain01.push_back(frac);
         comboTintsRGB.push_back(r.tint);
     }
 
-    std::string accumIconPath;
     std::vector<double> accumValues;
     std::vector<std::uint32_t> accumColorsRGB;
-    std::uint32_t accumTintRGB = 0;
 
     if (haveTotals) {
         const auto& b = *bundleOpt;
-        accumIconPath = b.iconPath;
-        accumTintRGB = b.iconTint;
         accumValues.reserve(b.values.size());
         for (auto v : b.values) accumValues.push_back(double(std::clamp<std::uint32_t>(v, 0, 100)));
         accumColorsRGB.assign(b.colors.begin(), b.colors.end());
     }
 
     w.FollowActorHead(actor);
-    w.SetAll(comboIconPaths, comboRemain01, comboTintsRGB, accumIconPath, accumValues, accumColorsRGB, accumTintRGB);
+    w.SetAll(comboRemain01, comboTintsRGB, accumValues, accumColorsRGB);
 }
 
 void InjectHUD::BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float seconds, bool realTime) {
@@ -400,14 +445,24 @@ void InjectHUD::BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float sec
     }
 }
 
+bool InjectHUD::HideFor(RE::FormID id) {
+    auto it = widgets.find(id);
+    if (it == widgets.end() || !it->second.widget) return false;
+
+    auto& w = *it->second.widget;
+    if (!w._view) return false;
+
+    w.ClearAndHide();
+    return true;
+}
+
 bool InjectHUD::RemoveFor(RE::FormID id) {
     if (!g_trueHUD || !id) return false;
     auto it = widgets.find(id);
     if (it == widgets.end()) return false;
 
     if (it->second.widget) {
-        const auto wid = id;
-        g_trueHUD->RemoveWidget(g_pluginHandle, ERF_WIDGET_TYPE, wid, TRUEHUD_API::WidgetRemovalMode::Immediate);
+        g_trueHUD->RemoveWidget(g_pluginHandle, ERF_WIDGET_TYPE, id, TRUEHUD_API::WidgetRemovalMode::Immediate);
         it->second.widget.reset();
     }
     widgets.erase(it);
@@ -424,8 +479,7 @@ void InjectHUD::RemoveAllWidgets() {
 
     for (const auto& [id, entry] : widgets) {
         if (!entry.widget) continue;
-        const auto wid = id;
-        g_trueHUD->RemoveWidget(g_pluginHandle, ERF_WIDGET_TYPE, wid, TRUEHUD_API::WidgetRemovalMode::Immediate);
+        g_trueHUD->RemoveWidget(g_pluginHandle, ERF_WIDGET_TYPE, id, TRUEHUD_API::WidgetRemovalMode::Immediate);
     }
     widgets.clear();
     combos.clear();
@@ -433,13 +487,25 @@ void InjectHUD::RemoveAllWidgets() {
 
 void InjectHUD::OnTrueHUDClose() {
     RemoveAllWidgets();
+    Utils::HeadCacheClearAll();
     HUD::ResetTracking();
 }
 
-void InjectHUD::OnUIFrameBegin() { DrainComboQueueOnUI(); }
+void InjectHUD::OnUIFrameBegin(double nowRtS, float nowH) { DrainComboQueueOnUI(nowRtS, nowH); }
 
-double InjectHUD::NowRtS() {
-    using clock = std::chrono::steady_clock;
-    static const auto t0 = clock::now();
-    return std::chrono::duration<double>(clock::now() - t0).count();
+bool InjectHUD::IsOnScreen(RE::Actor* actor, float worldOffsetZ) noexcept {
+    if (!actor || !g_viewPort || !g_worldToCamMatrix) return false;
+
+    RE::NiPoint3 world{};
+    // true = torso (seguindo o padrão TrueHUD/Utils)
+    if (!Utils::GetTargetPos(actor->CreateRefHandle(), world, /*bGetTorsoPos=*/true)) return false;
+
+    world.z += worldOffsetZ;
+
+    float nx = 0.f, ny = 0.f, depth = 0.f;
+    RE::NiCamera::WorldPtToScreenPt3((float (*)[4])g_worldToCamMatrix, *g_viewPort, world, nx, ny, depth, 1e-5f);
+    if (depth < 0.f) return false;
+
+    // Dentro do viewport normalizado?
+    return (nx >= 0.f && nx <= 1.f && ny >= 0.f && ny <= 1.f);
 }

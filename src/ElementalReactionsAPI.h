@@ -45,7 +45,6 @@ struct ERF_ReactionDesc_Public {
     const ERF_ElementHandle* elements;
     std::uint32_t elementCount;
     bool ordered;
-    std::uint32_t minTotalGauge;
     float minPctEach;
     float minSumSelected;
     float cooldownSeconds;
@@ -53,8 +52,7 @@ struct ERF_ReactionDesc_Public {
     float elementLockoutSeconds;
     bool elementLockoutIsRealTime;
     bool clearAllOnTrigger;
-    const char* hudIconPath;
-    std::uint32_t hudIconTint;
+    std::uint32_t hudTint;
     ERF_ReactionCallback cb;
     void* user;
 };

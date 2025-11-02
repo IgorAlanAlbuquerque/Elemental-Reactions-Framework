@@ -8,7 +8,6 @@ StateRegistry& StateRegistry::get() {
 
 ERF_StateHandle StateRegistry::registerState(const ERF_StateDesc& d) {
     if (_frozen) {
-        spdlog::error("[ERF][StateRegistry] registerState após freeze()");
         return 0;
     }
     auto& R = get();

@@ -10,7 +10,7 @@
 namespace {
     inline std::uint8_t valueForHandle(const std::vector<std::uint8_t>& totals, ERF_ElementHandle h) {
         if (h == 0) return 0;
-        const std::size_t idx = static_cast<std::size_t>(h - 1);
+        const std::size_t idx = static_cast<std::size_t>(h);
         return (idx < totals.size()) ? totals[idx] : 0;
     }
 }
@@ -25,7 +25,7 @@ ERF_ReactionHandle ReactionRegistry::registerReaction(const ERF_ReactionDesc& d)
     auto& R = get();
     if (R._reactions.empty()) R._reactions.resize(1);
     R._reactions.push_back(d);
-    R._indexed = false;  // invalida índice
+    R._indexed = false;
     return static_cast<ERF_ReactionHandle>(R._reactions.size() - 1);
 }
 
@@ -40,7 +40,7 @@ ReactionRegistry::Mask ReactionRegistry::makeMask_(const std::vector<ERF_Element
     Mask m = 0;
     for (auto h : elems) {
         if (h == 0) continue;
-        const auto bit = static_cast<unsigned>(h - 1);  // idx começa em 0
+        const auto bit = static_cast<unsigned>(h - 1);
         if (bit < 64) m |= (Mask(1) << bit);
     }
     return m;
@@ -80,16 +80,14 @@ void ReactionRegistry::buildIndex_() const {
     _indexed = true;
 }
 
-void ReactionRegistry::freeze() {
-    buildIndex_();  // só garante que está pronto
-}
+void ReactionRegistry::freeze() { buildIndex_(); }
 
 std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(const std::vector<std::uint8_t>& totals,
                                                                   const std::vector<ERF_ElementHandle>& present,
                                                                   float invSumAll, const ReactionRegistry* self) {
     self->buildIndex_();
 
-    // monta máscara dos presentes
+    // 1) máscara dos presentes (você já fazia)
     ReactionRegistry::Mask presentMask = 0;
     for (auto h : present) {
         if (!h) continue;
@@ -98,16 +96,23 @@ std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(const std::vec
     }
     if (!presentMask) return std::nullopt;
 
+    auto popcount64 = [](ReactionRegistry::Mask m) -> int {
+#if defined(_MSC_VER)
+        return static_cast<int>(__popcnt64(m));
+#else
+        return __builtin_popcountll(m);
+#endif
+    };
+
     ERF_ReactionHandle bestH = 0;
     float bestScore = 0.0f;
     std::size_t bestK = 0;
 
-    // percorre apenas submáscaras presentes (buckets)
-    for (auto sub = presentMask; sub; sub = (sub - 1) & presentMask) {
-        auto it = self->_byMask.find(sub);
-        if (it == self->_byMask.end()) continue;
-        const auto& bucket = it->second;
+    auto evalBucket = [&](ReactionRegistry::Mask m) {
+        auto itB = self->_byMask.find(m);
+        if (itB == self->_byMask.end()) return;
 
+        const auto& bucket = itB->second;
         for (ERF_ReactionHandle h : bucket) {
             const auto& r = self->_reactions[h];
 
@@ -117,9 +122,9 @@ std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(const std::vec
             for (auto eh : r.elements) {
                 const int v = valueForHandle(totals, eh);
                 sumSel += v;
+
                 const float req = self->_minPctEachByH[h];
                 if (req > 0.0f) {
-                    // v / sumAll  ->  v * invSumAll
                     const float p = static_cast<float>(v) * invSumAll;
                     if (p + 1e-6f < req) {
                         okPctEach = false;
@@ -129,20 +134,38 @@ std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(const std::vec
             }
             if (!okPctEach) continue;
 
-            // (sumSel / sumAll) -> sumSel * invSumAll
             const float fracSel = static_cast<float>(sumSel) * invSumAll;
             if (self->_minSumSelByH[h] > 0.0f && fracSel + 1e-6f < self->_minSumSelByH[h]) continue;
 
             const std::size_t k = self->_kByH[h];
             const bool better = (fracSel > bestScore) || ((std::abs(fracSel - bestScore) < 1e-6f) && (k > bestK)) ||
                                 ((std::abs(fracSel - bestScore) < 1e-6f) && (k == bestK) && (h < bestH));
+
             if (better) {
                 bestScore = fracSel;
                 bestK = k;
                 bestH = h;
+
+                // early-stop: score perfeito
+                if (bestScore >= 1.0f - 1e-6f) return;
             }
         }
+    };
+
+    // 2) Bucket EXATO primeiro — caminho feliz
+    evalBucket(presentMask);
+    if (bestH != 0 && bestScore >= 1.0f - 1e-6f) return bestH;
+
+    // 3) Submáscaras — com poda por cardinalidade
+    for (auto sub = presentMask; sub; sub = (sub - 1) & presentMask) {
+        if (sub == presentMask) continue;
+        const int k = popcount64(sub);
+        if (k < 2) continue;  // se 1-elem não é considerado, isso reduz muito a enumeração
+
+        evalBucket(sub);
+        if (bestH != 0 && bestScore >= 1.0f - 1e-6f) break;
     }
+
     if (bestH == 0) return std::nullopt;
     return bestH;
 }
@@ -151,5 +174,6 @@ std::optional<ERF_ReactionHandle> ReactionRegistry::pickBestFast(const std::vect
                                                                  const std::vector<ERF_ElementHandle>& present,
                                                                  int sumAll, float invSumAll) const {
     if (sumAll <= 0) return std::nullopt;
+
     return pickBest_core(totals, present, invSumAll, this);
 }

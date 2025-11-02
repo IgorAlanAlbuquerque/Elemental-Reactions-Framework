@@ -44,3 +44,5 @@ inline RE::Actor* AsActor(RE::MagicTarget* mt) noexcept {
 
 [[nodiscard]] constexpr float safeDiv(float a, float b) noexcept { return (b <= 0.0f) ? 0.0f : (a / b); }
 [[nodiscard]] constexpr double safeDiv(double a, double b) noexcept { return (b <= 0.0) ? 0.0 : (a / b); }
+
+[[nodiscard]] constexpr std::uint64_t MakeWidgetID(std::uint32_t formID) { return (std::uint64_t(formID) << 32); }

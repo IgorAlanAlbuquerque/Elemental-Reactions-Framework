@@ -16,12 +16,22 @@ namespace {
     std::atomic<bool> g_reg_open{false};
     std::atomic<bool> g_frozen{false};
     std::atomic<std::uint32_t> g_timeout_ms{8000};
+    static ERF::API::FrozenCaps g_caps{};
+
     void FreezeRegistriesOnce() {
         if (g_frozen.exchange(true)) return;
-        ElementRegistry::get().freeze();
+
         StateRegistry::get().freeze();
+        ElementRegistry::get().freeze();
         ReactionRegistry::get().freeze();
+        PreEffectRegistry::get().freeze();
+
         ElementalGauges::BuildColorLUTOnce();
+
+        g_caps.numElements = static_cast<std::uint16_t>(ElementRegistry::get().size());
+        g_caps.numStates = static_cast<std::uint16_t>(StateRegistry::get().size());
+        g_caps.numReactions = static_cast<std::uint16_t>(ReactionRegistry::get().size());
+        g_caps.ready = true;
         spdlog::info("[ERF] Registries selados.");
     }
 }
@@ -51,10 +61,7 @@ static ERF_ReactionHandle API_RegisterReaction(const ERF_ReactionDesc_Public& d)
     in.elementLockoutIsRealTime = d.elementLockoutIsRealTime;
     in.clearAllOnTrigger = d.clearAllOnTrigger;
 
-    if (d.hudIconPath && *d.hudIconPath) {
-        in.hud.iconPath = d.hudIconPath;
-        in.hud.iconTint = d.hudIconTint ? d.hudIconTint : 0xFFFFFF;
-    }
+    in.Tint = d.hudTint ? d.hudTint : 0xFFFFFF;
 
     in.cb = d.cb;
     in.user = d.user;
@@ -102,7 +109,6 @@ static bool API_DeactivateState(RE::Actor* actor, ERF_StateHandle state) noexcep
     return ElementalStates::SetActive(actor, state, false);
 }
 
-// Implementações usadas na API V1:
 static bool API_BeginBatchRegistration() noexcept {
     if (!g_reg_open.load(std::memory_order_acquire)) return false;
     g_reg_barrier.fetch_add(1, std::memory_order_acq_rel);
@@ -135,7 +141,6 @@ void ERF::API::OpenRegistrationWindowAndScheduleFreeze() {
         const auto ms = g_timeout_ms.load(std::memory_order_acquire);
         std::this_thread::sleep_for(std::chrono::milliseconds(ms));
 
-        // aguarda a barreira (com timeout de proteção igual ao ms)
         auto start = std::chrono::steady_clock::now();
         while (g_reg_barrier.load(std::memory_order_acquire) > 0) {
             if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(ms)) break;
@@ -148,3 +153,10 @@ void ERF::API::OpenRegistrationWindowAndScheduleFreeze() {
 }
 
 ERF_API_V1* ERF::API::Get() { return &g_api; }
+
+const ERF::API::FrozenCaps& ERF::API::Caps() {
+    if (!g_caps.ready) {
+        FreezeRegistriesOnce();
+    }
+    return g_caps;
+}
