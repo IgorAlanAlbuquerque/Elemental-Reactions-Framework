@@ -242,7 +242,6 @@ namespace {
     static bool MaybeTriggerReaction(RE::Actor* a, Gauges::Entry& e) {
         if (!a) return false;
 
-        // cache do ator já mantido pela Issue 5
         if (e.sumAll <= 0) return false;
 
         auto& RR = ReactionRegistry::get();
@@ -272,12 +271,7 @@ namespace {
         }
 
         ApplyElementLocksForReaction(e, r->elements, nowH, r->elementLockoutSeconds, r->elementLockoutIsRealTime);
-
         SetReactionCooldown(e, rh, nowH, r->cooldownSeconds, r->cooldownIsRealTime);
-
-        // (Opcional) marcar flag "em reação" por alguns instantes
-        // const std::size_t ri = Gauges::idxReact(rh);
-        // if (ri < e.inReaction.size()) e.inReaction[ri] = 1;
 
         // Duração visual/base para HUD/efeitos
         const float durS =
@@ -788,15 +782,13 @@ void ElementalGauges::ForEachDecayed(const std::function<void(RE::FormID, Totals
     }
 }
 
-std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudIconDecayed(RE::FormID id) {
+std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(RE::FormID id, double nowRt,
+                                                                               float nowH) {
     auto& m = Gauges::state();
     auto it = m.find(id);
     if (it == m.end()) return std::nullopt;
 
     auto& e = it->second;
-
-    const float nowH = NowHours();
-    const double nowRt = NowRealSeconds();
 
     // Decay por elemento
     Gauges::tickAll(e, nowH);
@@ -870,25 +862,6 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudIconDecay
     if (newSum != e.sumAll) {
         Gauges::rebuildPresence(e);  // O(countE) só quando necessário
         // (opcional) assert em debug: assert(e.sumAll == newSum);
-    }
-
-    // ----- pick da melhor reação (Issue 5) -----
-    if (e.sumAll > 0) {
-        auto const& RR = ReactionRegistry::get();
-        const float invSum = 1.0f / static_cast<float>(e.sumAll);
-
-        if (auto rh = RR.pickBestFast(/*totals*/ e.v,
-                                      /*present*/ e.presentList,
-                                      /*sumAll*/ e.sumAll,
-                                      /*inv*/ invSum)) {
-            if (const ERF_ReactionDesc* rd = RR.get(*rh)) {
-                if (!rd->hud.iconPath.empty()) {
-                    bundle.iconPath = rd->hud.iconPath;
-                    bundle.iconTint = rd->hud.iconTint;
-                    return bundle;
-                }
-            }
-        }
     }
 
     return bundle;

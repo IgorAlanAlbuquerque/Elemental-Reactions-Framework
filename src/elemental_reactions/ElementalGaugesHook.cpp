@@ -371,7 +371,7 @@ void ElementalGaugesHook::RegisterAEEventSink() { GaugesHook::RegisterAEEventSin
 void ElementalGaugesHook::InitCarrierRefs() {
     using namespace GaugesHook;
     static constexpr const char* kPlugin = "ERF_Keywords.esp";
-    constexpr std::uint32_t kMgefLocalID = 0x059800;
+    constexpr std::uint32_t kMgefLocalID = 0x0000C804;
     constexpr std::uint32_t kKwLocalID = 0x000000;
 
     auto* dh = RE::TESDataHandler::GetSingleton();

@@ -14,8 +14,7 @@
 
 namespace ElementalGauges {
     struct HudGaugeBundle {
-        std::string iconPath;
-        std::uint32_t iconTint{0xFFFFFF};
+        std::uint32_t Tint{0xFFFFFF};
 
         std::span<const std::uint32_t> values;
         std::span<const std::uint32_t> colors;
@@ -42,7 +41,7 @@ namespace ElementalGauges {
     void Clear(RE::Actor* a);
     void RegisterStore();
     void ForEachDecayed(const std::function<void(RE::FormID, TotalsView)>& fn);
-    std::optional<HudGaugeBundle> PickHudIconDecayed(RE::FormID id);
+    std::optional<HudGaugeBundle> PickHudDecayed(RE::FormID id, double nowRt, float nowH);
     void InvalidateStateMultipliers(RE::Actor* a);
     void BuildColorLUTOnce();
 }

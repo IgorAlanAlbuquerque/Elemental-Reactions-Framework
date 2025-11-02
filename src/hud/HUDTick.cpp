@@ -35,7 +35,9 @@ namespace {
     static constexpr float EVICT_SECONDS = 10.0f;
 
     void UpdateAllOnUIThread() {
-        InjectHUD::OnUIFrameBegin();
+        const double nowRt = InjectHUD::NowRtS();  // sua função steady_clock
+        const float nowH = RE::Calendar::GetSingleton()->GetHoursPassed();
+        InjectHUD::OnUIFrameBegin(nowRt, nowH);
 
         const float now = RE::Calendar::GetSingleton()->GetCurrentGameTime() * 3600.0f;
 
@@ -81,8 +83,10 @@ namespace {
             auto [itAdd, inserted] = lastAddedAt.try_emplace(id, now);
             const bool inGrace = inserted || ((now - itAdd->second) < INIT_GRACE_SECONDS);
 
-            if (!inGrace) {
-                InjectHUD::UpdateFor(a);
+            if (!InjectHUD::IsOnScreen(a)) {
+                InjectHUD::HideFor(id);
+            } else if (!inGrace) {
+                InjectHUD::UpdateFor(a, nowRt, nowH);
             }
 
             lastSeen[id] = now;

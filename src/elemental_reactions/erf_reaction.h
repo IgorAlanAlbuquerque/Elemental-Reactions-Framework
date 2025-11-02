@@ -14,11 +14,6 @@ struct ERF_ReactionContext;
 
 using ERF_ReactionCallback = void (*)(const ERF_ReactionContext& ctx, void* user);
 
-struct ERF_ReactionHudIcon {
-    std::string iconPath;
-    std::uint32_t iconTint = 0xFFFFFF;
-};
-
 struct ERF_ReactionDesc {
     std::string name;
     std::vector<ERF_ElementHandle> elements;
@@ -33,7 +28,7 @@ struct ERF_ReactionDesc {
     bool elementLockoutIsRealTime = true;
     bool clearAllOnTrigger = true;
 
-    ERF_ReactionHudIcon hud{};
+    std::uint32_t Tint = 0xFFFFFF;
 
     ERF_ReactionCallback cb = nullptr;
     void* user = nullptr;

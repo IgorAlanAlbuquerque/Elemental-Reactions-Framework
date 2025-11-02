@@ -7,4 +7,7 @@ namespace Utils {
     bool GetBoundTopPos(RE::Actor* a, RE::NiPoint3& out);
     bool GetTargetPos(RE::ObjectRefHandle a_target, RE::NiPoint3& pos, bool bPreferBody);
     bool GetHeadPosFast(RE::Actor* a, RE::NiPoint3& out);
+
+    void HeadCacheReserve(std::size_t n) noexcept;
+    void HeadCacheClearAll() noexcept;
 }

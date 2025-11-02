@@ -61,10 +61,7 @@ static ERF_ReactionHandle API_RegisterReaction(const ERF_ReactionDesc_Public& d)
     in.elementLockoutIsRealTime = d.elementLockoutIsRealTime;
     in.clearAllOnTrigger = d.clearAllOnTrigger;
 
-    if (d.hudIconPath && *d.hudIconPath) {
-        in.hud.iconPath = d.hudIconPath;
-        in.hud.iconTint = d.hudIconTint ? d.hudIconTint : 0xFFFFFF;
-    }
+    in.Tint = d.hudTint ? d.hudTint : 0xFFFFFF;
 
     in.cb = d.cb;
     in.user = d.user;

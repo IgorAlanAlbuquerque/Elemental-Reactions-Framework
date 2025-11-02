@@ -157,7 +157,6 @@ static void RegisterEverything_Core() {
         r.elements = elems;
         r.elementCount = 1;
         r.ordered = false;
-        r.minTotalGauge = 100;
         r.minPctEach = 0.85f;
         r.minSumSelected = 0.0f;
 
@@ -167,8 +166,7 @@ static void RegisterEverything_Core() {
         r.elementLockoutIsRealTime = true;
         r.clearAllOnTrigger = true;
 
-        r.hudIconPath = "img://textures/erf/icons/icon_fire.dds";
-        r.hudIconTint = 0xF04A3A;
+        r.hudTint = 0xF04A3A;
 
         r.cb = &OnReaction;
         r.user = nullptr;

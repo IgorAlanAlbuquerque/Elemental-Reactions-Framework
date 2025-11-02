@@ -10,7 +10,7 @@
 namespace {
     inline std::uint8_t valueForHandle(const std::vector<std::uint8_t>& totals, ERF_ElementHandle h) {
         if (h == 0) return 0;
-        const std::size_t idx = static_cast<std::size_t>(h - 1);
+        const std::size_t idx = static_cast<std::size_t>(h);
         return (idx < totals.size()) ? totals[idx] : 0;
     }
 }
@@ -174,5 +174,6 @@ std::optional<ERF_ReactionHandle> ReactionRegistry::pickBestFast(const std::vect
                                                                  const std::vector<ERF_ElementHandle>& present,
                                                                  int sumAll, float invSumAll) const {
     if (sumAll <= 0) return std::nullopt;
+
     return pickBest_core(totals, present, invSumAll, this);
 }

@@ -8,7 +8,19 @@ namespace {
     static const RE::BSFixedString kHeadName{"NPC Head [Head]"};
     inline constexpr float kBoundFallbackRadius = 64.0f;
 
-    static std::unordered_map<RE::FormID, RE::NiAVObject*> g_headCache;
+    struct HeadEntry {
+        RE::NiAVObject* node{nullptr};
+    };
+
+    static std::unordered_map<RE::FormID, HeadEntry> g_headCache;
+    static bool g_resvd = false;
+
+    inline void EnsureReserveOnce() {
+        if (!g_resvd) {
+            g_headCache.reserve(128);
+            g_resvd = true;
+        }
+    }
 
     inline RE::NiAVObject* FindHeadNode(RE::NiAVObject* root) noexcept {
         return root ? root->GetObjectByName(kHeadName) : nullptr;
@@ -16,17 +28,38 @@ namespace {
 
     inline RE::NiAVObject* GetHeadNodeFast_(RE::Actor* a) {
         if (!a) return nullptr;
+        EnsureReserveOnce();
+
         const RE::FormID key = a->GetFormID();
         if (auto it = g_headCache.find(key); it != g_headCache.end()) {
-            if (auto* n = it->second; n && n->parent) return n;
-            g_headCache.erase(it);
+            if (RE::NiAVObject* n = it->second.node) {
+                if (n->parent) return n;  // válido
+                if (RE::NiAVObject* root = a->Get3D2()) {
+                    if (RE::NiAVObject* head = FindHeadNode(root)) {
+                        it->second.node = head;
+                        return head;
+                    }
+                }
+                it->second.node = nullptr;
+                return nullptr;
+            } else {
+                if (RE::NiAVObject* root = a->Get3D2()) {
+                    if (RE::NiAVObject* head = FindHeadNode(root)) {
+                        it->second.node = head;
+                        return head;
+                    }
+                }
+                return nullptr;
+            }
         }
-        RE::NiAVObject* root = a->Get3D2();
-        if (!root) return nullptr;
-        if (RE::NiAVObject* head = FindHeadNode(root)) {
-            g_headCache.emplace(key, head);
-            return head;
+
+        if (RE::NiAVObject* root = a->Get3D2()) {
+            if (RE::NiAVObject* head = FindHeadNode(root)) {
+                g_headCache.emplace(key, HeadEntry{head});
+                return head;
+            }
         }
+        g_headCache.emplace(key, HeadEntry{nullptr});
         return nullptr;
     }
 }
@@ -104,4 +137,15 @@ bool Utils::GetTargetPos(RE::ObjectRefHandle a_target, RE::NiPoint3& pos, bool b
 
     pos = target->GetPosition();
     return true;
+}
+
+// === Helpers de gerenciamento do cache ===
+void Utils::HeadCacheReserve(std::size_t n) noexcept {
+    EnsureReserveOnce();
+    if (n > g_headCache.bucket_count()) g_headCache.reserve(n);
+}
+
+void Utils::HeadCacheClearAll() noexcept {
+    g_headCache.clear();
+    g_resvd = false;
 }

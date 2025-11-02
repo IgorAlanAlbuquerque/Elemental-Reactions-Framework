@@ -2,17 +2,12 @@ import flash.display.BitmapData;
 
 class ERF_Gauge extends MovieClip
 {
-  // ====== container raíz ======
   private var gauge_mc:MovieClip;
 
-  // ====== geometria/layout (apenas DECLARA; inicializa no ctor) ======
+  // ====== geometria/layout ======
   private var rOut:Number;
   private var strokePx:Number;
-  private var iconPadPx:Number;
-  private var iconNudgeX:Number;
-  private var iconNudgeY:Number;
 
-  // Spacing equivalente ao C++: base -40 e +40 por slot
   private var _slotSpacingPx:Number;
   private var _slotBaseOffsetX:Number;
   private var _slotScale:Number;
@@ -21,18 +16,13 @@ class ERF_Gauge extends MovieClip
   private var _ready:Boolean;
   private var _tried:Boolean;
 
-  // slots dinâmicos (cada um com halo/anel/icon próprios) — per-instância!
   private var _slotMcs:Array;
 
   // ================= ctor =================
   function ERF_Gauge()
   {
-    // — todos os “defaults” por instância —
     rOut        = 7;
     strokePx    = 1.5;
-    iconPadPx   = 0.5;
-    iconNudgeX  = 0;
-    iconNudgeY  = 0;
 
     _slotSpacingPx   = 40;
     _slotBaseOffsetX = -40;
@@ -92,7 +82,6 @@ class ERF_Gauge extends MovieClip
     var off:Number = rOut + 2;
 
     if (gauge_mc) gauge_mc.removeMovieClip();
-    // Usa depth livre local da instância (evita conflitos internos)
     var d:Number = this.getNextHighestDepth();
     gauge_mc = this.createEmptyMovieClip("gauge_mc", d);
     gauge_mc._x = off;
@@ -117,7 +106,7 @@ class ERF_Gauge extends MovieClip
   private function _ensureSlot(i:Number):MovieClip {
     if (_slotMcs[i]) return _slotMcs[i];
 
-    var slotDepth:Number = 200 + i; // prof. local ao gauge_mc; OK entre instâncias
+    var slotDepth:Number = 200 + i;
     var slot:MovieClip = gauge_mc.createEmptyMovieClip("slot_"+i, slotDepth);
     slot._xscale = slot._yscale = _slotScale * 100;
 
@@ -126,9 +115,7 @@ class ERF_Gauge extends MovieClip
     slot.ring_bg_mc  = slot.createEmptyMovieClip("ring_bg_mc", 10);
     slot.ring_fg_mc  = slot.createEmptyMovieClip("ring_fg_mc", 20);
     slot.combo_mc    = slot.createEmptyMovieClip("combo_mc",   30);
-    slot.icon_mc     = null;
 
-    // fundo preto atrás do ícone (equivalente ao look anterior)
     var haloMargin:Number = 2;
     var haloR:Number = rOut + (strokePx * 0.5) + haloMargin;
     _drawFilledCircle(slot.halo_mc, haloR, 0x000000, 100);
@@ -142,39 +129,6 @@ class ERF_Gauge extends MovieClip
     if (slot.ring_bg_mc) slot.ring_bg_mc.clear();
     if (slot.ring_fg_mc) slot.ring_fg_mc.clear();
     if (slot.combo_mc)   slot.combo_mc.clear();
-    if (slot.icon_mc) { slot.icon_mc.removeMovieClip(); slot.icon_mc = null; }
-  }
-
-  private function _slotSetIcon(slot:MovieClip, path:String, rgb:Number):Void {
-    if (slot.icon_mc) slot.icon_mc.removeMovieClip();
-    slot.icon_mc = slot.createEmptyMovieClip("icon_mc", 40);
-
-    var tint:Number = (isNaN(rgb) || rgb == undefined) ? 0xFFFFFF : Number(rgb);
-    var p:String = (path && path.length > 0) ? String(path) : "img://textures/erf/icons/icon_fire.dds";
-    p = p.split("\\").join("/").toLowerCase();
-
-    var mcl:MovieClipLoader = new MovieClipLoader();
-    var self:ERF_Gauge = this;
-
-    var lsn:Object = {};
-    lsn.onLoadInit = function(mc:MovieClip):Void {
-      var side:Number = (self.rOut * 2) - (self.strokePx * 2) - (self.iconPadPx * 2);
-      mc._width  = side;
-      mc._height = side;
-      mc._x = -side/2 + self.iconNudgeX;
-      mc._y = -side/2 + self.iconNudgeY;
-      mc.cacheAsBitmap = true;
-
-      var c:Color = new Color(mc);
-      c.setRGB(tint);
-    };
-    lsn.onLoadError = function(mc:MovieClip, err:Number, http:Number):Void {
-      var c:Color = new Color(mc);
-      c.setRGB(0xFF00FF);
-    };
-
-    mcl.addListener(lsn);
-    mcl.loadClip(p, slot.icon_mc);
   }
 
   private function _slotDrawCombo(slot:MovieClip, frac:Number, rgb:Number):Void {
@@ -224,57 +178,51 @@ class ERF_Gauge extends MovieClip
     slot._visible = true;
   }
 
-  // ============ API batelada ============
-  public function setAll(comboIconPaths:Array, comboRemain01:Array, comboTints:Array,
-                         accumIconPath:String, accumValues:Array, accumColors:Array, accumTint:Number):Boolean
+  // ============ API ============
+  public function setAll(comboRemain01:Array, comboTints:Array,
+                         accumValues:Array, accumColors:Array):Boolean
   {
     if (!_ready) _tryInit();
 
-    var n:Number = (comboIconPaths != null) ? comboIconPaths.length : 0;
-    if (comboRemain01 == null) comboRemain01 = [];
-    if (comboTints == null)    comboTints    = [];
+    var n:Number = (comboRemain01 != null) ? comboRemain01.length : 0;
+    if (comboTints == null) comboTints = [];
 
-    // 1) Combos (slots 0..n-1)
     for (var i:Number = 0; i < n; ++i) {
       var slot:MovieClip = _ensureSlot(i);
       slot._x = _slotBaseOffsetX + (i * _slotSpacingPx);
       slot._y = 0;
 
       _slotClear(slot);
-      var iconPath:String = String(comboIconPaths[i]);
-      var remain:Number   = Number(comboRemain01[i]);
-      var tint:Number     = Number(comboTints[i]);
+      var remain:Number = Number(comboRemain01[i]);
+      var tint:Number = Number(comboTints[i]);
 
-      _slotSetIcon(slot, iconPath, tint);
       _slotDrawCombo(slot, remain, tint);
       slot._visible = true;
     }
 
-    // desliga/limpa slots “sobrando”
     for (var j:Number = n; j < _slotMcs.length; ++j) {
-      if (_slotMcs[j]) { _slotClear(_slotMcs[j]); _slotMcs[j]._visible = false; }
+      if (_slotMcs[j]) {
+        _slotClear(_slotMcs[j]);
+        _slotMcs[j]._visible = false;
+      }
     }
 
-    // 2) Acumulador no slot N (direita dos combos)
     var hasAccum:Boolean = false;
     if (accumValues != null) {
       var sum:Number = 0;
       for (var si:Number = 0; si < accumValues.length; ++si) {
-        var vv:Number = Number(accumValues[si]); if (!isNaN(vv)) sum += vv;
+        var vv:Number = Number(accumValues[si]);
+        if (!isNaN(vv)) sum += vv;
       }
       hasAccum = (sum > 0);
     }
+
     if (hasAccum) {
       var aSlot:MovieClip = _ensureSlot(n);
       aSlot._x = _slotBaseOffsetX + (n * _slotSpacingPx);
       aSlot._y = 0;
 
       _slotClear(aSlot);
-      var aTint:Number = (isNaN(accumTint) ? 0xFFFFFF : Number(accumTint));
-
-      if (accumIconPath && accumIconPath.length > 0) {
-        _slotSetIcon(aSlot, accumIconPath, aTint);
-      }
 
       _slotDrawAccum(aSlot, accumValues, accumColors);
       aSlot._visible = true;

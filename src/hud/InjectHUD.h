@@ -1,8 +1,12 @@
 #pragma once
 
 #include <array>
+#include <deque>
+#include <limits>
+#include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "../common/Helpers.h"
 #include "../elemental_reactions/erf_reaction.h"
@@ -25,7 +29,6 @@ namespace InjectHUD {
         float endH{0.f};
         float durationS{0.f};
 
-        std::string iconPath;
         std::uint32_t tint{0xFFFFFF};
     };
 
@@ -36,6 +39,7 @@ namespace InjectHUD {
 
     class ERFWidget;
     using WidgetPtr = std::shared_ptr<ERFWidget>;
+
     struct HUDEntry {
         RE::ActorHandle handle{};
         WidgetPtr widget;
@@ -82,21 +86,52 @@ namespace InjectHUD {
         void Dispose() override {}
 
         void FollowActorHead(RE::Actor* actor);
-        void SetAll(const std::vector<std::string>& comboIconPaths, const std::vector<double>& comboRemain01,
-                    const std::vector<std::uint32_t>& comboTintsRGB, const std::string& accumIconPath,
-                    const std::vector<double>& accumValues, const std::vector<std::uint32_t>& accumColorsRGB,
-                    std::uint32_t accumTintRGB);
+
+        // Chamada única por ator/por frame para desenhar tudo
+        void SetAll(const std::vector<double>& comboRemain01, const std::vector<std::uint32_t>& comboTintsRGB,
+                    const std::vector<double>& accumValues, const std::vector<std::uint32_t>& accumColorsRGB);
 
         void ResetSmoothing() { _lastX = _lastY = std::numeric_limits<double>::quiet_NaN(); }
+        void ClearAndHide();
+
+    private:
+        // ===== Issue 7: cache GFx para evitar CreateArray/Push por frame =====
+        bool _arraysInit{false};
+
+        // Arrays persistentes usados em setAll (reutilizados frame a frame)
+        RE::GFxValue _arrComboRemain;
+        RE::GFxValue _arrComboTints;
+        RE::GFxValue _arrAccumVals;
+        RE::GFxValue _arrAccumCols;
+
+        // Vetor de argumentos fixo (sempre aponta para os membros acima)
+        RE::GFxValue _args[4];
+
+        // Helpers para inicializar e preencher sem alocar todo frame
+        void EnsureArrays();
+        void FillArrayDoubles(RE::GFxValue& arr, const std::vector<double>& src);
+        void FillArrayU32AsNumber(RE::GFxValue& arr, const std::vector<std::uint32_t>& src);
     };
 
+    // Gerência do ciclo de vida do widget por ator
     void AddFor(RE::Actor* actor);
-    void UpdateFor(RE::Actor* actor);
+    void UpdateFor(RE::Actor* actor, double nowRtS, float nowH);
     void BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float seconds, bool realTime);
+
+    // Issue 6: ocultar (reutilizar) vs remover (evict definitivo)
     bool HideFor(RE::FormID id);
     bool RemoveFor(RE::FormID id);
     void RemoveAllWidgets();
+
+    // Eventos do TrueHUD/loop de UI
     void OnTrueHUDClose();
-    void OnUIFrameBegin();
-    inline double NowRtS();
+    void OnUIFrameBegin(double nowRtS, float nowH);
+
+    bool IsOnScreen(RE::Actor* a, float worldOffsetZ = 70.0f) noexcept;
+
+    inline double NowRtS() {
+        using clock = std::chrono::steady_clock;
+        static const auto t0 = clock::now();
+        return std::chrono::duration<double>(clock::now() - t0).count();
+    }
 }
