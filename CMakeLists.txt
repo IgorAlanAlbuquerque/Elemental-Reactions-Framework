@@ -7,18 +7,6 @@ if(DEFINED ENV{SKYRIM_MODS_FOLDER} AND IS_DIRECTORY "$ENV{SKYRIM_MODS_FOLDER}")
     set(OUTPUT_FOLDER "$ENV{SKYRIM_MODS_FOLDER}/${PROJECT_NAME}")
 endif()
 
-# ------ TrueHUD
-
-include(FetchContent)
-
-FetchContent_Declare(
-  TrueHUD
-  GIT_REPOSITORY https://github.com/ersh1/TrueHUD.git
-  GIT_TAG master
-)
-
-FetchContent_Populate(TrueHUD)
-
 find_package(CommonLibSSE CONFIG REQUIRED)
 
 add_commonlibsse_plugin(ElementalReactionsFramework
@@ -38,10 +26,16 @@ add_commonlibsse_plugin(ElementalReactionsFramework
     src/elemental_reactions/erf_state.cpp
     src/elemental_reactions/erf_preeffect.cpp
     src/ModAPI.cpp
+    src/ui/ERF_UI.cpp
+    src/Config.cpp
 )
 
-target_include_directories(ElementalReactionsFramework PRIVATE ${truehud_SOURCE_DIR}/src PUBLIC PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src )
+target_include_directories(ElementalReactionsFramework
+  PRIVATE
+  ${truehud_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/src )
 
 target_compile_features(ElementalReactionsFramework PRIVATE cxx_std_23)
 
@@ -61,6 +55,9 @@ target_precompile_headers(ElementalReactionsFramework PRIVATE
   src/elemental_reactions/erf_state.h
   src/elemental_reactions/erf_preeffect.h
   src/ModAPI.h
+  src/ui/ERF_UI.h
+  src/Offsets.h
+  src/Config.h
 )
 
 if(DEFINED OUTPUT_FOLDER)
