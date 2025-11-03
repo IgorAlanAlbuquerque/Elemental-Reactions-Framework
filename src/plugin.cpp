@@ -14,6 +14,7 @@
 #include "elemental_reactions/ElementalStates.h"
 #include "hud/InjectHUD.h"
 #include "hud/TrueHUDMenuWatcher.h"
+#include "ui/ERF_UI.h"
 
 #ifndef DLLEXPORT
     #include "REL/Relocation.h"
@@ -47,7 +48,6 @@ namespace {
                 ElementalGaugesHook::InitCarrierRefs();
                 ElementalGaugesHook::Install();
                 ElementalGaugesHook::RegisterAEEventSink();
-                spdlog::info("Hook para gauges instalado.");
 
                 const auto trueHUD = static_cast<TRUEHUD_API::IVTrueHUD4*>(
                     TRUEHUD_API::RequestPluginAPI(TRUEHUD_API::InterfaceVersion::V4));
@@ -55,32 +55,27 @@ namespace {
                     spdlog::warn("[ERF] TrueHUD não detectado. Widget não será carregado.");
                     return;
                 }
-                spdlog::info("[ERF] TrueHUD detectado.");
                 InjectHUD::g_trueHUD = trueHUD;
                 InjectHUD::g_pluginHandle = SKSE::GetPluginHandle();
 
                 if (auto* ui = RE::UI::GetSingleton()) {
                     ui->GetEventSource<RE::MenuOpenCloseEvent>()->AddEventSink(
                         TrueHUDWatcher::TrueHUDMenuWatcher::GetSingleton());
-                    spdlog::info("[ERF] TrueHUD menu watcher registrado.");
                 }
 
                 InjectHUD::g_trueHUD->LoadCustomWidgets(
                     InjectHUD::g_pluginHandle, InjectHUD::ERF_SWF_PATH, [](TRUEHUD_API::APIResult result) {
-                        spdlog::info("[ERF] Resultado do LoadCustomWidgets: {}",
-                                     static_cast<int>(std::to_underlying(result)));
-
                         if (result == TRUEHUD_API::APIResult::OK) {
                             InjectHUD::g_trueHUD->RegisterNewWidgetType(InjectHUD::g_pluginHandle,
                                                                         InjectHUD::ERF_WIDGET_TYPE);
-                            spdlog::info("Widget registrado");
 
                             ElementalGaugesHook::ALLOW_HUD_TICK.store(true, std::memory_order_release);
-                            spdlog::info("ALLOW_HUD_TICK = true (HUDTick iniciará nos hooks).");
                         } else {
                             spdlog::error("[ERF] Falha ao carregar o SWF dos widgets!");
                         }
                     });
+
+                ERF_UI::Register();
                 break;
             }
 

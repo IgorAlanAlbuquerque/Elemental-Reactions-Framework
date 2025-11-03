@@ -6,13 +6,13 @@ set "SWFMILL=D:\msys2\mingw64\bin\swfmill.exe"
 set "MTASC=C:\Users\igora\Downloads\mtasc\mtasc.exe"
 
 rem === Pastas/arquivos ===
-set "SRC=art\ui\flash\src"
+set "SRC=flash\src"
 set "OUT=build"
 set "DIST=Interface\erfgauge"
 set "MO2=D:\MO2\mods\ElementalReactionsFramework\Interface\erfgauge"
 
 rem Templates
-set "GAUGE_XML=art\ui\flash\gauge_template.xml"
+set "GAUGE_XML=flash\gauge_template.xml"
 
 rem Saídas
 set "GAUGE_BASE=%OUT%\erfgauge_base.swf"
