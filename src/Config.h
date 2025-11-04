@@ -5,6 +5,7 @@
 namespace ERF {
     struct Config {
         std::atomic<bool> enabled{true};
+        std::atomic<bool> hudEnabled{true};
 
         void Load();
         void Save() const;
