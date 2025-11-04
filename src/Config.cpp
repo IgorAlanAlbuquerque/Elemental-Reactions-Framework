@@ -17,6 +17,14 @@ namespace ERF {
         return defVal;
     }
 
+    static double loadDouble(CSimpleIniA& ini, const char* sec, const char* key, double defVal) {
+        const char* v = ini.GetValue(sec, key, nullptr);
+        if (!v) return defVal;
+        char* end = nullptr;
+        double d = std::strtod(v, &end);
+        return (end && *end == '\0') ? d : defVal;
+    }
+
     std::filesystem::path Config::IniPath() {
         auto dirOpt = SKSE::log::log_directory();
         if (!dirOpt) {
@@ -31,15 +39,19 @@ namespace ERF {
         ini.SetUnicode();
         const auto path = IniPath();
 
-        if (SI_Error rc = ini.LoadFile(path.string().c_str()); rc < 0) {
-            return;
-        }
+        if (SI_Error rc = ini.LoadFile(path.string().c_str()); rc < 0) return;
+
         bool en = loadBool(ini, "General", "Enabled", true);
-        enabled.store(en, std::memory_order_relaxed);
         bool hud = loadBool(ini, "HUD", "Enabled", true);
+        bool sgl = loadBool(ini, "Gauges", "Single", true);
+        double pm = loadDouble(ini, "Gauges", "PlayerMult", 1.0);
+        double nm = loadDouble(ini, "Gauges", "NpcMult", 1.0);
+
+        enabled.store(en, std::memory_order_relaxed);
         hudEnabled.store(hud, std::memory_order_relaxed);
-        bool single = loadBool(ini, "Gauges", "Single", true);
-        isSingle.store(single, std::memory_order_relaxed);
+        isSingle.store(sgl, std::memory_order_relaxed);
+        playerMult.store(static_cast<float>(pm < 0 ? 0 : pm), std::memory_order_relaxed);
+        npcMult.store(static_cast<float>(nm < 0 ? 0 : nm), std::memory_order_relaxed);
     }
 
     void Config::Save() const {
@@ -51,6 +63,8 @@ namespace ERF {
         ini.SetBoolValue("General", "Enabled", enabled.load(std::memory_order_relaxed));
         ini.SetBoolValue("HUD", "Enabled", hudEnabled.load(std::memory_order_relaxed));
         ini.SetBoolValue("Gauges", "Single", isSingle.load(std::memory_order_relaxed));
+        ini.SetDoubleValue("Gauges", "PlayerMult", playerMult.load(std::memory_order_relaxed));
+        ini.SetDoubleValue("Gauges", "NpcMult", npcMult.load(std::memory_order_relaxed));
 
         std::error_code ec;
         std::filesystem::create_directories(path.parent_path(), ec);
