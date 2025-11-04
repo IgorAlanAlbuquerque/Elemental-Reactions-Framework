@@ -4,8 +4,7 @@
       "name": "x64",
       "includePath": [
         "${workspaceFolder}/src",
-        "${workspaceFolder}/build/release/vcpkg_installed/x64-windows-static-md/include",
-        "${workspaceFolder}/build/release/_deps/truehud-src/src"
+        "${workspaceFolder}/build/release/vcpkg_installed/x64-windows-static-md/include"
       ],
       "defines": ["UNICODE", "_DEBUG"],
       "windowsSdkVersion": "10.0.19041.0",

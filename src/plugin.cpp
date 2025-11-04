@@ -3,6 +3,7 @@
 #include <thread>
 #include <utility>
 
+#include "Config.h"
 #include "ElementalReactionsAPI.h"
 #include "ModAPI.h"
 #include "PCH.h"
@@ -75,6 +76,7 @@ namespace {
                         }
                     });
 
+                ERF::GetConfig().Load();
                 ERF_UI::Register();
                 break;
             }

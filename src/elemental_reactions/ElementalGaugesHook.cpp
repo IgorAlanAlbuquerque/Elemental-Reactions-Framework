@@ -12,6 +12,7 @@
 #include <type_traits>
 #include <unordered_map>
 
+#include "../Config.h"
 #include "../common/Helpers.h"
 #include "../hud/HUDTick.h"
 #include "ElementalGauges.h"
@@ -62,6 +63,8 @@ namespace {
             }
         }
     };
+
+    inline bool IsDisabled() noexcept { return !ERF::GetConfig().enabled.load(std::memory_order_relaxed); }
 }
 
 namespace GaugesHook {
@@ -198,6 +201,8 @@ namespace GaugesHook {
         static void thunk(T* self, RE::MagicTarget* mt) {
             _orig(self, mt);
 
+            if (IsDisabled()) return;
+
             const RE::EffectSetting* mgef = self ? self->GetBaseObject() : nullptr;
 
             RE::Actor* actor = AsActor(self ? self->target : nullptr);
@@ -244,6 +249,10 @@ namespace GaugesHook {
         static inline Fn* _orig{};
 
         static void thunk(T* self, float dt) {
+            if (IsDisabled()) {
+                _orig(self, dt);
+                return;
+            }
             const auto* mgef = self->GetBaseObject();
             if (mgef && IsGaugeAccCarrier(mgef)) {
                 _orig(self, dt);

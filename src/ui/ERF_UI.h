@@ -1,4 +1,5 @@
 #pragma once
+#include "Config.h"
 #include "SKSEMenuFramework.h"
 
 namespace ERF_UI {
