@@ -58,7 +58,7 @@ namespace Gauges {
 
     using Map = std::unordered_map<RE::FormID, Entry>;
     inline Map& state() noexcept {
-        static Map m;
+        static Map m;  // NOSONAR: estado centralizado
         return m;
     }
 
@@ -150,7 +150,7 @@ namespace Gauges {
         e.sumAll += (after - before);
 
         const ERF_ElementHandle h = handleFromIndex(i);
-        const unsigned bit = static_cast<unsigned>(h - 1);
+        const auto bit = static_cast<unsigned>(h - 1);
         const bool was = (before > 0);
         const bool is = (after > 0);
 
@@ -179,8 +179,8 @@ namespace Gauges {
             const int v = e.v[i];
             if (v > 0) {
                 const ERF_ElementHandle h = handleFromIndex(i);
-                const unsigned bit = static_cast<unsigned>(h - 1);
-                if (bit < 64) e.presentMask |= (UINT64_C(1) << bit);
+
+                if (const auto bit = static_cast<unsigned>(h - 1); bit < 64) e.presentMask |= (UINT64_C(1) << bit);
                 e.presentList.push_back(h);
                 e.sumAll += v;
             }
@@ -240,7 +240,7 @@ namespace {
         }
     }
 
-    static bool TriggerReaction(RE::Actor* a, Gauges::Entry& e, ERF_ElementHandle elem) {
+    bool TriggerReaction(RE::Actor* a, Gauges::Entry& e, ERF_ElementHandle elem) {
         if (!a) return false;
 
         if (e.sumAll <= 0) return false;
@@ -383,9 +383,7 @@ namespace {
             const std::size_t pi = Gauges::idxPre(ph);
             if (pi >= e.preActive.size()) continue;
 
-            const bool above = (gaugeNow >= pd->minGauge);
-
-            if (!above) {
+            if (const bool above = (gaugeNow >= pd->minGauge); !above) {
                 if (e.preActive[pi]) {
                     e.preActive[pi] = 0u;
                     e.preIntensity[pi] = 0.f;
@@ -422,8 +420,7 @@ namespace {
             if (!e.preActive[pi]) {
                 needApply = true;
             } else {
-                const float last = e.preIntensity[pi];
-                if (std::fabs(last - intensity) > 1e-3f) {
+                if (const float last = e.preIntensity[pi]; std::fabs(last - intensity) > 1e-3f) {
                     needApply = true;
                 }
 
@@ -496,7 +493,7 @@ namespace {
             if (const ERF_ElementDesc* ed = ER.get(h)) {
                 for (ERF_StateHandle sh : active) {
                     if (sh == 0) continue;
-                    const std::size_t si = static_cast<std::size_t>(sh);
+                    const auto si = static_cast<std::size_t>(sh);
                     if (si < ed->stateMultDense.size()) {
                         e.effMult[i] *= ed->stateMultDense[si];
                     }
@@ -693,7 +690,9 @@ void ElementalGauges::Add(RE::Actor* a, ERF_ElementHandle elem, int delta) {
     }
 
     const int before = e.v[i];
-    const double scaled = std::round(static_cast<double>(delta) * e.effMult[i]);
+    const float mult = (a->IsPlayerRef() ? ERF::GetConfig().playerMult.load(std::memory_order_relaxed)
+                                         : ERF::GetConfig().npcMult.load(std::memory_order_relaxed));
+    const double scaled = std::round(static_cast<double>(delta) * mult * e.effMult[i]);
     const int adj = (scaled <= 0.0) ? 0 : static_cast<int>(scaled);
     const int afterI = std::clamp(before + adj, 0, 100);
 
@@ -742,13 +741,12 @@ void ElementalGauges::Set(RE::Actor* a, ERF_ElementHandle elem, std::uint8_t val
 
     Gauges::tickOne(e, i, nowH);
 
-    const int afterDecay = static_cast<int>(e.v[i]);
+    const auto afterDecay = static_cast<int>(e.v[i]);
     if (afterDecay != before0) {
         Gauges::onValChange(e, i, before0, afterDecay);
     }
 
-    const int afterSet = static_cast<int>(clamp100(value));
-    if (afterSet != afterDecay) {
+    if (const auto afterSet = static_cast<int>(clamp100(value)); afterSet != afterDecay) {
         e.v[i] = static_cast<std::uint8_t>(afterSet);
         Gauges::onValChange(e, i, afterDecay, afterSet);
     } else {
@@ -823,9 +821,7 @@ void ElementalGauges::ForEachDecayed(const std::function<void(RE::FormID, Totals
             }
         }
 
-        const bool anyVal = (e.sumAll > 0);
-
-        if (!anyVal && !anyElemLock && !anyReactCd && !anyReactFlag) {
+        if (const bool anyVal = (e.sumAll > 0); !anyVal && !anyElemLock && !anyReactCd && !anyReactFlag) {
             it = m.erase(it);
             continue;
         }
