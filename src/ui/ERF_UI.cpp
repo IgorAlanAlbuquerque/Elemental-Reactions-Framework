@@ -12,6 +12,14 @@ void __stdcall ERF_UI::DrawGeneral() {
 
     ImGui::SameLine();
     ImGui::TextDisabled(enabled ? "(enabled)" : "(disabled)");
+
+    ImGui::Separator();
+
+    bool hud = ERF::GetConfig().hudEnabled.load(std::memory_order_relaxed);
+    if (ImGui::Checkbox("Show HUD", &hud)) {
+        ERF::GetConfig().hudEnabled.store(hud, std::memory_order_relaxed);
+        ERF::GetConfig().Save();
+    }
 }
 
 void ERF_UI::Register() {

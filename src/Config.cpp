@@ -32,12 +32,12 @@ namespace ERF {
         const auto path = IniPath();
         SI_Error rc = ini.LoadFile(path.string().c_str());
         if (rc < 0) {
-            spdlog::info("[ERF] Config::Load: usando defaults (sem ini em {})", path.string());
             return;
         }
         bool en = loadBool(ini, "General", "Enabled", true);
         enabled.store(en, std::memory_order_relaxed);
-        spdlog::info("[ERF] Config::Load: Enabled={}", en);
+        bool hud = loadBool(ini, "HUD", "Enabled", true);
+        hudEnabled.store(hud, std::memory_order_relaxed);
     }
 
     void Config::Save() const {
@@ -46,10 +46,10 @@ namespace ERF {
         const auto path = IniPath();
         ini.LoadFile(path.string().c_str());
         ini.SetBoolValue("General", "Enabled", enabled.load(std::memory_order_relaxed));
+        ini.SetBoolValue("HUD", "Enabled", hudEnabled.load(std::memory_order_relaxed));
         std::error_code ec;
         std::filesystem::create_directories(path.parent_path(), ec);
         ini.SaveFile(path.string().c_str());
-        spdlog::info("[ERF] Config::Save: wrote {}", path.string());
     }
 
     Config& GetConfig() {

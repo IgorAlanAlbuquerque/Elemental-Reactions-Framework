@@ -366,6 +366,9 @@ namespace HookThread {
 std::atomic_bool ElementalGaugesHook::ALLOW_HUD_TICK{false};
 
 void ElementalGaugesHook::StartHUDTick() {
+    if (!ERF::GetConfig().hudEnabled.load(std::memory_order_relaxed)) {
+        return;
+    }
     if (!ALLOW_HUD_TICK.load(std::memory_order_acquire)) return;
     const auto now = duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
     HookThread::g_lastHookMs.store(now, std::memory_order_relaxed);
