@@ -1,13 +1,14 @@
 #include "InjectHUD.h"
 
 #include <algorithm>
-#include <chrono>  // <- para NowRtS()
-#include <cmath>   // <- floor, isnan
+#include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <string_view>
 #include <vector>
 
+#include "../Config.h"
 #include "../elemental_reactions/ElementalGauges.h"
 #include "Offsets.h"
 #include "Utils.h"
@@ -117,8 +118,6 @@ namespace {
     }
 }
 
-// ====================== ERFWidget ======================
-
 void InjectHUD::ERFWidget::Initialize() {
     if (!_view) {
         return;
@@ -134,7 +133,6 @@ void InjectHUD::ERFWidget::Initialize() {
     _hadContent = false;
     _lastGaugeRtS = std::numeric_limits<double>::quiet_NaN();
 
-    // Issue 7: inicializa arrays/args persistentes (uma vez)
     _arraysInit = false;
     EnsureArrays();
 }
@@ -162,11 +160,9 @@ void InjectHUD::ERFWidget::FollowActorHead(RE::Actor* actor) {
         return;
     }
 
-    // Offset vertical seguro (pode ser parametrizado futuramente)
     static constexpr float kWorldOffsetZ = 70.0f;
     world.z += kWorldOffsetZ;
 
-    // Projeção 3D → 2D
     float nx = 0.f, ny = 0.f, depth = 0.f;
     RE::NiCamera::WorldPtToScreenPt3((float (*)[4])g_worldToCamMatrix, *g_viewPort, world, nx, ny, depth, 1e-5f);
 
@@ -182,12 +178,10 @@ void InjectHUD::ERFWidget::FollowActorHead(RE::Actor* actor) {
     const float stageH = rect.bottom - rect.top;
     if (stageW <= 1.f || stageH <= 1.f) return;
 
-    // Conversão de coordenadas
     ny = 1.0f - ny;
     double px = rect.left + stageW * nx;
     double py = rect.top + stageH * ny;
 
-    // Escala baseada em distância
     float scalePct = 100.f;
     if (g_fNear && g_fFar) {
         const float fNear = *g_fNear, fFar = *g_fFar;
@@ -196,7 +190,6 @@ void InjectHUD::ERFWidget::FollowActorHead(RE::Actor* actor) {
         scalePct = (((clamped - 500.f) * (50.f - 100.f)) / (2000.f - 500.f)) + 100.f;
     }
 
-    // Suavização com snapping inicial
     constexpr double SMOOTH_FACTOR = 0.15;
     constexpr double MIN_DELTA = 0.25;
 
@@ -209,7 +202,6 @@ void InjectHUD::ERFWidget::FollowActorHead(RE::Actor* actor) {
     const double dx = px - _lastX;
     const double dy = py - _lastY;
 
-    // Interpolação somente se houve variação perceptível
     if (std::abs(dx) > MIN_DELTA || std::abs(dy) > MIN_DELTA) {
         px = _lastX + dx * SMOOTH_FACTOR;
         py = _lastY + dy * SMOOTH_FACTOR;
@@ -233,8 +225,6 @@ void InjectHUD::ERFWidget::FollowActorHead(RE::Actor* actor) {
     _lastX = px;
     _lastY = py;
 }
-
-// ---------- Issue 7: Helpers de reuso de arrays/args ----------
 
 void InjectHUD::ERFWidget::EnsureArrays() {
     if (!(_view && !_arraysInit)) return;
@@ -291,31 +281,27 @@ void InjectHUD::ERFWidget::FillArrayU32AsNumber(RE::GFxValue& arr, const std::ve
 void InjectHUD::ERFWidget::ClearAndHide() {
     if (!_view) return;
 
-    // Garante arrays/args persistentes
     EnsureArrays();
 
-    // Recria arrays vazios (ou SetArraySize(0), se a sua SDK suportar)
     _view->CreateArray(&_arrComboRemain);
     _view->CreateArray(&_arrComboTints);
     _view->CreateArray(&_arrAccumVals);
     _view->CreateArray(&_arrAccumCols);
+    _isSingle.SetBoolean(ERF::GetConfig().isSingle.load(std::memory_order_relaxed));
 
-    // Rebind dos ponteiros dos args (importante: arrays foram recriados)
     _args[0] = _arrComboRemain;
     _args[1] = _arrComboTints;
     _args[2] = _arrAccumVals;
     _args[3] = _arrAccumCols;
+    _args[4] = _isSingle;
 
     RE::GFxValue ret;
-    _object.Invoke("setAll", &ret, _args, 4);
+    _object.Invoke("setAll", &ret, _args, 5);
 
-    // Agora esconde visualmente
     RE::GFxValue vis;
     vis.SetBoolean(false);
     _object.SetMember("_visible", vis);
 }
-
-// ---------- SetAll com reuso de arrays/args ----------
 
 void InjectHUD::ERFWidget::SetAll(const std::vector<double>& comboRemain01,
                                   const std::vector<std::uint32_t>& comboTintsRGB,
@@ -323,28 +309,27 @@ void InjectHUD::ERFWidget::SetAll(const std::vector<double>& comboRemain01,
                                   const std::vector<std::uint32_t>& accumColorsRGB) {
     if (!_view) return;
 
-    // Reusa arrays/args persistentes; recria array apenas se o tamanho mudou
     EnsureArrays();
 
     FillArrayDoubles(_arrComboRemain, comboRemain01);
     FillArrayU32AsNumber(_arrComboTints, comboTintsRGB);
     FillArrayDoubles(_arrAccumVals, accumValues);
     FillArrayU32AsNumber(_arrAccumCols, accumColorsRGB);
+    _isSingle.SetBoolean(ERF::GetConfig().isSingle.load(std::memory_order_relaxed));
 
     _args[0] = _arrComboRemain;
     _args[1] = _arrComboTints;
     _args[2] = _arrAccumVals;
     _args[3] = _arrAccumCols;
+    _args[4] = _isSingle;
 
     RE::GFxValue ret;
-    const bool ok = _object.Invoke("setAll", &ret, _args, 4);
+    const bool ok = _object.Invoke("setAll", &ret, _args, 5);
 
     RE::GFxValue vis;
     vis.SetBoolean(ok);
     _object.SetMember("_visible", vis);
 }
-
-// ====================== API InjectHUD ======================
 
 void InjectHUD::AddFor(RE::Actor* actor) {
     if (!g_trueHUD || !actor) {
@@ -363,7 +348,7 @@ void InjectHUD::AddFor(RE::Actor* actor) {
     g_trueHUD->AddActorInfoBar(h);
 
     auto w = std::make_shared<ERFWidget>();
-    const auto wid = static_cast<uint32_t>(actor->GetFormID());
+    const auto wid = actor->GetFormID();
     g_trueHUD->AddWidget(g_pluginHandle, ERF_WIDGET_TYPE, wid, ERF_SYMBOL_NAME, w);
     w->ProcessDelegates();
     entry.widget = std::move(w);
@@ -497,15 +482,15 @@ bool InjectHUD::IsOnScreen(RE::Actor* actor, float worldOffsetZ) noexcept {
     if (!actor || !g_viewPort || !g_worldToCamMatrix) return false;
 
     RE::NiPoint3 world{};
-    // true = torso (seguindo o padrão TrueHUD/Utils)
     if (!Utils::GetTargetPos(actor->CreateRefHandle(), world, /*bGetTorsoPos=*/true)) return false;
 
     world.z += worldOffsetZ;
 
-    float nx = 0.f, ny = 0.f, depth = 0.f;
+    float nx = 0.f;
+    float ny = 0.f;
+    float depth = 0.f;
     RE::NiCamera::WorldPtToScreenPt3((float (*)[4])g_worldToCamMatrix, *g_viewPort, world, nx, ny, depth, 1e-5f);
     if (depth < 0.f) return false;
 
-    // Dentro do viewport normalizado?
     return (nx >= 0.f && nx <= 1.f && ny >= 0.f && ny <= 1.f);
 }

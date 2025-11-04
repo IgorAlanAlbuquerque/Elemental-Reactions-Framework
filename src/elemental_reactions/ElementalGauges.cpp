@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "../Config.h"
 #include "../common/Helpers.h"
 #include "../common/PluginSerialization.h"
 #include "../hud/InjectHUD.h"
@@ -239,18 +240,82 @@ namespace {
         }
     }
 
-    static bool MaybeTriggerReaction(RE::Actor* a, Gauges::Entry& e) {
+    static bool TriggerReaction(RE::Actor* a, Gauges::Entry& e, ERF_ElementHandle elem) {
         if (!a) return false;
 
         if (e.sumAll <= 0) return false;
 
-        auto& RR = ReactionRegistry::get();
-        const float invSum = 1.0f / static_cast<float>(e.sumAll);
+        auto const& RR = ReactionRegistry::get();
 
-        auto rhOpt = RR.pickBestFast(/*totals*/ e.v,
-                                     /*present*/ e.presentList,
-                                     /*sumAll*/ e.sumAll,
-                                     /*inv*/ invSum);
+        if (elem == 0) {
+            const float invSum = 1.0f / static_cast<float>(e.sumAll);
+
+            auto rhOpt = RR.pickBestFast(e.v, e.presentList, e.sumAll, invSum);
+            if (!rhOpt) return false;
+
+            const ERF_ReactionHandle rh = *rhOpt;
+            const ERF_ReactionDesc* r = RR.get(rh);
+            if (!r) return false;
+
+            const float nowH = NowHours();
+
+            if (r->clearAllOnTrigger) {
+                for (std::size_t i = Gauges::firstIndex(); i < e.v.size(); ++i) {
+                    e.v[i] = 0;
+                    e.lastHitH[i] = nowH;
+                    e.lastEvalH[i] = nowH;
+                }
+                e.presentMask = 0;
+                e.presentList.clear();
+                e.sumAll = 0;
+            }
+
+            ApplyElementLocksForReaction(e, r->elements, nowH, r->elementLockoutSeconds, r->elementLockoutIsRealTime);
+            SetReactionCooldown(e, rh, nowH, r->cooldownSeconds, r->cooldownIsRealTime);
+
+            const float durS =
+                (r->elementLockoutSeconds > 0.f) ? r->elementLockoutSeconds : std::max(0.5f, r->cooldownSeconds);
+            const bool durRT = (r->elementLockoutSeconds > 0.f) ? r->elementLockoutIsRealTime : r->cooldownIsRealTime;
+
+            InjectHUD::BeginReaction(a, rh, durS, durRT);
+
+            if (r->cb) {
+                if (auto* tasks = SKSE::GetTaskInterface()) {
+                    RE::ActorHandle h = a->CreateRefHandle();
+                    auto cb = r->cb;
+                    void* user = r->user;
+                    tasks->AddTask([h, cb, user]() {
+                        if (auto actorNi = h.get()) {
+                            if (auto* target = actorNi.get()) {
+                                ERF_ReactionContext ctx{};
+                                ctx.target = target;
+                                cb(ctx, user);
+                            }
+                        }
+                    });
+                } else {
+                    ERF_ReactionContext ctx{};
+                    ctx.target = a;
+                    r->cb(ctx, r->user);
+                }
+            }
+
+            return true;
+        }
+
+        const std::size_t idx = Gauges::idx(elem);
+        const int v = (idx < e.v.size()) ? static_cast<int>(e.v[idx]) : 0;
+        if (v <= 0) return false;
+
+        std::vector<std::uint8_t> totals(e.v.size(), 0);
+        totals[idx] = static_cast<std::uint8_t>(v);
+
+        std::vector<ERF_ElementHandle> present{elem};
+
+        const int sum = v;
+        const float invSum = 1.0f / static_cast<float>(sum);
+
+        auto rhOpt = RR.pickBestFast(totals, present, sum, invSum);
         if (!rhOpt) return false;
 
         const ERF_ReactionHandle rh = *rhOpt;
@@ -260,20 +325,15 @@ namespace {
         const float nowH = NowHours();
 
         if (r->clearAllOnTrigger) {
-            for (std::size_t i = Gauges::firstIndex(); i < e.v.size(); ++i) {
-                e.v[i] = 0;
-                e.lastHitH[i] = nowH;
-                e.lastEvalH[i] = nowH;
-            }
-            e.presentMask = 0;
-            e.presentList.clear();
-            e.sumAll = 0;
+            e.v[idx] = 0;
+            e.lastHitH[idx] = nowH;
+            e.lastEvalH[idx] = nowH;
+            Gauges::rebuildPresence(e);
         }
 
         ApplyElementLocksForReaction(e, r->elements, nowH, r->elementLockoutSeconds, r->elementLockoutIsRealTime);
         SetReactionCooldown(e, rh, nowH, r->cooldownSeconds, r->cooldownIsRealTime);
 
-        // Duração visual/base para HUD/efeitos
         const float durS =
             (r->elementLockoutSeconds > 0.f) ? r->elementLockoutSeconds : std::max(0.5f, r->cooldownSeconds);
         const bool durRT = (r->elementLockoutSeconds > 0.f) ? r->elementLockoutIsRealTime : r->cooldownIsRealTime;
@@ -295,7 +355,6 @@ namespace {
                     }
                 });
             } else {
-                // fallback síncrono se não houver task interface (preserva comportamento)
                 ERF_ReactionContext ctx{};
                 ctx.target = a;
                 r->cb(ctx, r->user);
@@ -622,8 +681,7 @@ void ElementalGauges::Add(RE::Actor* a, ERF_ElementHandle elem, int delta) {
 
     Gauges::tickAll(e, nowH);
 
-    const int sumNow = SumAll(e);
-    if (sumNow != e.sumAll) {
+    if (const int sumNow = SumAll(e); sumNow != e.sumAll) {
         Gauges::rebuildPresence(e);
     }
 
@@ -645,8 +703,16 @@ void ElementalGauges::Add(RE::Actor* a, ERF_ElementHandle elem, int delta) {
     e.lastEvalH[i] = nowH;
     onValChange(e, i, before, afterI);
 
-    if (sumBefore < 100 && e.sumAll >= 100) {
-        MaybeTriggerReaction(a, e);
+    if (const bool singleMode = ERF::GetConfig().isSingle.load(std::memory_order_relaxed); singleMode) {
+        // SINGLE
+        if (before < 100 && afterI >= 100) {
+            TriggerReaction(a, e, elem);
+        }
+    } else {
+        // MIXED
+        if (sumBefore < 100 && e.sumAll >= 100) {
+            TriggerReaction(a, e, 0);
+        }
     }
     (void)MaybeTriggerPreEffectsFor(a, e, elem, static_cast<std::uint8_t>(afterI));
 }
@@ -672,25 +738,20 @@ void ElementalGauges::Set(RE::Actor* a, ERF_ElementHandle elem, std::uint8_t val
     const std::size_t i = Gauges::idx(elem);
     const float nowH = NowHours();
 
-    // 1) estado antes do decay
     const int before0 = static_cast<int>(e.v[i]);
 
-    // 2) aplica decay daquele slot
     Gauges::tickOne(e, i, nowH);
 
-    // 3) atualiza presença por causa do decay (se mudou >0→0, etc)
     const int afterDecay = static_cast<int>(e.v[i]);
     if (afterDecay != before0) {
         Gauges::onValChange(e, i, before0, afterDecay);
     }
 
-    // 4) seta o novo valor e atualiza presença
     const int afterSet = static_cast<int>(clamp100(value));
     if (afterSet != afterDecay) {
         e.v[i] = static_cast<std::uint8_t>(afterSet);
         Gauges::onValChange(e, i, afterDecay, afterSet);
     } else {
-        // mantém o byte (já está com afterDecay) — ainda atualiza timestamp
         e.v[i] = static_cast<std::uint8_t>(afterDecay);
     }
 
@@ -711,21 +772,18 @@ void ElementalGauges::ForEachDecayed(const std::function<void(RE::FormID, Totals
     for (auto it = m.begin(); it != m.end();) {
         auto& e = it->second;
 
-        // 1) aplica decay de todos os elementos
         Gauges::tickAll(e, nowH);
 
         const std::size_t beginE = Gauges::firstIndex();
         const std::size_t nE = e.v.size();
         const std::size_t countE = (nE > beginE) ? (nE - beginE) : 0;
 
-        // 2) checa soma após decay (para manter cache coerente)
         int newSum = 0;
         for (std::size_t i = beginE; i < nE; ++i) newSum += e.v[i];
         if (newSum != e.sumAll) {
-            Gauges::rebuildPresence(e);  // só quando necessário (O(countE))
+            Gauges::rebuildPresence(e);
         }
 
-        // 3) sinais de inércia (locks/cooldowns/flags)
         bool anyElemLock = false;
         for (std::size_t i = beginE; i < nE && !anyElemLock; ++i) {
             const bool lockH = (i < e.blockUntilH.size()) && (e.blockUntilH[i] > nowH);
@@ -767,13 +825,11 @@ void ElementalGauges::ForEachDecayed(const std::function<void(RE::FormID, Totals
 
         const bool anyVal = (e.sumAll > 0);
 
-        // 4) se está totalmente inerte, apaga
         if (!anyVal && !anyElemLock && !anyReactCd && !anyReactFlag) {
             it = m.erase(it);
             continue;
         }
 
-        // 5) passa uma view zero-copy (span) dos valores decaídos
         const std::span<const std::uint8_t> spanVals{e.v.data() + beginE, countE};
         TotalsView view{spanVals};
         fn(it->first, view);
@@ -790,12 +846,10 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
 
     auto& e = it->second;
 
-    // Decay por elemento
     Gauges::tickAll(e, nowH);
 
     HudGaugeBundle bundle{};
 
-    // ----- montar arrays para o SWF -----
     const std::size_t beginE = Gauges::firstIndex();
     const std::size_t nE = e.v.size();
     const std::size_t countE = (nE > beginE) ? (nE - beginE) : 0;
@@ -805,7 +859,6 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
 
     const auto colors = GetColorLUT();
 
-    // Também computamos 'newSum' para decidir se precisamos sincronizar o cache
     int newSum = 0;
     for (std::size_t i = beginE, j = 0; i < nE; ++i, ++j) {
         const std::uint8_t vv = e.v[i];
@@ -818,7 +871,6 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
     bundle.colors = std::span<const std::uint32_t>(TL_cols32.data(), TL_cols32.size());
 
     if (newSum == 0) {
-        // Inércia (locks/cooldowns/flags) antes de descartar o ator
         const bool anyElemLock = std::any_of(e.blockUntilH.begin() + std::min(beginE, e.blockUntilH.size()),
                                              e.blockUntilH.end(), [&](float x) { return x > nowH; }) ||
                                  std::any_of(e.blockUntilRtS.begin() + std::min(beginE, e.blockUntilRtS.size()),
@@ -853,15 +905,13 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
         }
 
         if (!anyElemLock && !anyReactCd && !anyReactFlag) {
-            m.erase(it);  // completamente inerte
+            m.erase(it);
         }
         return std::nullopt;
     }
 
-    // ----- sincronizar cache de presença/soma se o decay mudou a soma -----
     if (newSum != e.sumAll) {
-        Gauges::rebuildPresence(e);  // O(countE) só quando necessário
-        // (opcional) assert em debug: assert(e.sumAll == newSum);
+        Gauges::rebuildPresence(e);
     }
 
     return bundle;

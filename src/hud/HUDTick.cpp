@@ -35,7 +35,7 @@ namespace {
     static constexpr float EVICT_SECONDS = 10.0f;
 
     void UpdateAllOnUIThread() {
-        const double nowRt = InjectHUD::NowRtS();  // sua função steady_clock
+        const double nowRt = InjectHUD::NowRtS();
         const float nowH = RE::Calendar::GetSingleton()->GetHoursPassed();
         InjectHUD::OnUIFrameBegin(nowRt, nowH);
 
@@ -100,11 +100,10 @@ namespace {
                 const float seen = lastSeen.contains(id) ? lastSeen[id] : 0.0f;
                 const float age = now - seen;
 
-                // Esconder rápido para evitar churn de alocação
                 if (age >= ZERO_GRACE_SECONDS) {
                     InjectHUD::HideFor(id);
                 }
-                // Destruir só depois de um tempo maior de inatividade
+
                 if (age >= EVICT_SECONDS) {
                     toRemove.push_back(id);
                     lastAddedAt.erase(id);
@@ -125,7 +124,6 @@ namespace {
             const bool aliveNow = (alive.find(id) != alive.end());
             const float age = now - it->second;
 
-            // Se já não há entry e passou do grace, limpe tracking
             if (!aliveNow && !hasEntry && age >= ZERO_GRACE_SECONDS) {
                 lastAddedAt.erase(id);
                 it = lastSeen.erase(it);

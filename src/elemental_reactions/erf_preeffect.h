@@ -38,8 +38,7 @@ public:
 
     std::span<const ERF_PreEffectHandle> listByElement(ERF_ElementHandle h) const;
 
-    // === NOVO: congelamento e introspecção ===
-    void freeze();  // sela o registry (impede novos registros)
+    void freeze();
     bool isFrozen() const noexcept { return _frozen; }
     std::size_t size() const noexcept { return (_effects.size() > 0) ? (_effects.size() - 1) : 0; }
 

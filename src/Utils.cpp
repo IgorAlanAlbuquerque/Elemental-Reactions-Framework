@@ -33,7 +33,7 @@ namespace {
         const RE::FormID key = a->GetFormID();
         if (auto it = g_headCache.find(key); it != g_headCache.end()) {
             if (RE::NiAVObject* n = it->second.node) {
-                if (n->parent) return n;  // válido
+                if (n->parent) return n;
                 if (RE::NiAVObject* root = a->Get3D2()) {
                     if (RE::NiAVObject* head = FindHeadNode(root)) {
                         it->second.node = head;
@@ -66,11 +66,11 @@ namespace {
 
 bool Utils::GetHeadPosFast(RE::Actor* a, RE::NiPoint3& out) {
     if (!a) return false;
-    if (RE::NiAVObject* head = GetHeadNodeFast_(a)) {
+    if (RE::NiAVObject const* head = GetHeadNodeFast_(a)) {
         out = head->world.translate;
         return true;
     }
-    if (RE::NiAVObject* root = a->Get3D2()) {
+    if (RE::NiAVObject const* root = a->Get3D2()) {
         const auto& b = root->worldBound;
         if (b.radius > 1e-4f) {
             out = b.center;
@@ -87,7 +87,7 @@ bool Utils::GetNodePosition(RE::ActorPtr a_actor, const char* a_nodeName, RE::Ni
     if (!root) return false;
     static thread_local RE::BSFixedString s_name;
     s_name = a_nodeName;
-    if (RE::NiAVObject* node = root->GetObjectByName(s_name)) {
+    if (RE::NiAVObject const* node = root->GetObjectByName(s_name)) {
         point = node->world.translate;
         return true;
     }
@@ -139,7 +139,6 @@ bool Utils::GetTargetPos(RE::ObjectRefHandle a_target, RE::NiPoint3& pos, bool b
     return true;
 }
 
-// === Helpers de gerenciamento do cache ===
 void Utils::HeadCacheReserve(std::size_t n) noexcept {
     EnsureReserveOnce();
     if (n > g_headCache.bucket_count()) g_headCache.reserve(n);

@@ -30,14 +30,16 @@ namespace ERF {
         CSimpleIniA ini;
         ini.SetUnicode();
         const auto path = IniPath();
-        SI_Error rc = ini.LoadFile(path.string().c_str());
-        if (rc < 0) {
+
+        if (SI_Error rc = ini.LoadFile(path.string().c_str()); rc < 0) {
             return;
         }
         bool en = loadBool(ini, "General", "Enabled", true);
         enabled.store(en, std::memory_order_relaxed);
         bool hud = loadBool(ini, "HUD", "Enabled", true);
         hudEnabled.store(hud, std::memory_order_relaxed);
+        bool single = loadBool(ini, "Gauges", "Single", true);
+        isSingle.store(single, std::memory_order_relaxed);
     }
 
     void Config::Save() const {
@@ -45,8 +47,11 @@ namespace ERF {
         ini.SetUnicode();
         const auto path = IniPath();
         ini.LoadFile(path.string().c_str());
+
         ini.SetBoolValue("General", "Enabled", enabled.load(std::memory_order_relaxed));
         ini.SetBoolValue("HUD", "Enabled", hudEnabled.load(std::memory_order_relaxed));
+        ini.SetBoolValue("Gauges", "Single", isSingle.load(std::memory_order_relaxed));
+
         std::error_code ec;
         std::filesystem::create_directories(path.parent_path(), ec);
         ini.SaveFile(path.string().c_str());
