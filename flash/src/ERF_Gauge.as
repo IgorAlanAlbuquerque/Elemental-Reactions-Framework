@@ -180,7 +180,7 @@ class ERF_Gauge extends MovieClip
 
   // ============ API ============
   public function setAll(comboRemain01:Array, comboTints:Array,
-                         accumValues:Array, accumColors:Array):Boolean
+                         accumValues:Array, accumColors:Array, isSingle:Boolean):Boolean
   {
     if (!_ready) _tryInit();
 
@@ -199,13 +199,9 @@ class ERF_Gauge extends MovieClip
       _slotDrawCombo(slot, remain, tint);
       slot._visible = true;
     }
-
-    for (var j:Number = n; j < _slotMcs.length; ++j) {
-      if (_slotMcs[j]) {
-        _slotClear(_slotMcs[j]);
-        _slotMcs[j]._visible = false;
-      }
-    }
+    
+    var nextIndex:Number = n;
+    var anyAccumDrawn:Boolean = false;
 
     var hasAccum:Boolean = false;
     if (accumValues != null) {
@@ -218,17 +214,58 @@ class ERF_Gauge extends MovieClip
     }
 
     if (hasAccum) {
-      var aSlot:MovieClip = _ensureSlot(n);
-      aSlot._x = _slotBaseOffsetX + (n * _slotSpacingPx);
-      aSlot._y = 0;
+      if (isSingle) {
+        // ===== MODO SINGLE =====
+        var m:Number = accumValues.length;
+        var drawn:Number = 0;
+        for (var k:Number = 0; k < m; ++k) {
+          var v:Number = Number(accumValues[k]);
+          if (isNaN(v) || v <= 0) continue;
 
-      _slotClear(aSlot);
+          var frac:Number = v / 100.0;
+          if (frac < 0) frac = 0;
+          if (frac > 1) frac = 1;
 
-      _slotDrawAccum(aSlot, accumValues, accumColors);
-      aSlot._visible = true;
+          var col:Number = (accumColors && !isNaN(Number(accumColors[k])))
+                          ? Number(accumColors[k]) : 0xFFFFFF;
+
+          var s:MovieClip = _ensureSlot(nextIndex + drawn);
+          s._x = _slotBaseOffsetX + ((nextIndex + drawn) * _slotSpacingPx);
+          s._y = 0;
+
+          _slotClear(s);
+          _slotDrawCombo(s, frac, col);
+          s._visible = true;
+
+          drawn++;
+        }
+        if (drawn > 0) {
+          anyAccumDrawn = true;
+          nextIndex += drawn;
+        }
+      } else {
+        // ===== MIXED =====
+        var aSlot:MovieClip = _ensureSlot(nextIndex);
+        aSlot._x = _slotBaseOffsetX + (nextIndex * _slotSpacingPx);
+        aSlot._y = 0;
+
+        _slotClear(aSlot);
+        _slotDrawAccum(aSlot, accumValues, accumColors);
+        aSlot._visible = true;
+
+        anyAccumDrawn = true;
+        nextIndex += 1;
+      }
     }
 
-    var anyVisible:Boolean = (n > 0) || hasAccum;
+    for (var j:Number = nextIndex; j < _slotMcs.length; ++j) {
+      if (_slotMcs[j]) {
+        _slotClear(_slotMcs[j]);
+        _slotMcs[j]._visible = false;
+      }
+    }
+
+    var anyVisible:Boolean = (n > 0) || anyAccumDrawn;
     this._visible = anyVisible;
     return anyVisible;
   }

@@ -87,7 +87,6 @@ std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(const std::vec
                                                                   float invSumAll, const ReactionRegistry* self) {
     self->buildIndex_();
 
-    // 1) máscara dos presentes (você já fazia)
     ReactionRegistry::Mask presentMask = 0;
     for (auto h : present) {
         if (!h) continue;
@@ -146,21 +145,17 @@ std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(const std::vec
                 bestK = k;
                 bestH = h;
 
-                // early-stop: score perfeito
                 if (bestScore >= 1.0f - 1e-6f) return;
             }
         }
     };
 
-    // 2) Bucket EXATO primeiro — caminho feliz
     evalBucket(presentMask);
     if (bestH != 0 && bestScore >= 1.0f - 1e-6f) return bestH;
 
-    // 3) Submáscaras — com poda por cardinalidade
     for (auto sub = presentMask; sub; sub = (sub - 1) & presentMask) {
         if (sub == presentMask) continue;
-        const int k = popcount64(sub);
-        if (k < 2) continue;  // se 1-elem não é considerado, isso reduz muito a enumeração
+        if (const int k = popcount64(sub); k < 2) continue;
 
         evalBucket(sub);
         if (bestH != 0 && bestScore >= 1.0f - 1e-6f) break;
