@@ -846,21 +846,27 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
 
     HudGaugeBundle bundle{};
 
-    const std::size_t beginE = Gauges::firstIndex();
-    const std::size_t nE = e.v.size();
-    const std::size_t countE = (nE > beginE) ? (nE - beginE) : 0;
-
-    TL_vals32.resize(countE);
-    TL_cols32.resize(countE);
+    TL_vals32.clear();
+    TL_cols32.clear();
+    TL_vals32.reserve(e.presentList.size());
+    TL_cols32.reserve(e.presentList.size());
 
     const auto colors = GetColorLUT();
+    const std::size_t beginE = Gauges::firstIndex();
 
     int newSum = 0;
-    for (std::size_t i = beginE, j = 0; i < nE; ++i, ++j) {
+    for (ERF_ElementHandle h : e.presentList) {
+        const std::size_t i = Gauges::idx(h);
+        if (i >= e.v.size()) continue;
         const std::uint8_t vv = e.v[i];
-        TL_vals32[j] = static_cast<std::uint32_t>(vv);
-        TL_cols32[j] = (i < colors.size()) ? colors[i] : 0xFFFFFFu;
+        if (vv == 0) continue;
+
         newSum += vv;
+        TL_vals32.push_back(static_cast<std::uint32_t>(vv));
+
+        const std::size_t colorIdx = i;
+        const std::uint32_t rgb = (colorIdx < colors.size()) ? colors[colorIdx] : 0xFFFFFFu;
+        TL_cols32.push_back(rgb);
     }
 
     bundle.values = std::span<const std::uint32_t>(TL_vals32.data(), TL_vals32.size());
