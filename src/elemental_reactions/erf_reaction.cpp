@@ -155,7 +155,6 @@ std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(const std::vec
 
     for (auto sub = presentMask; sub; sub = (sub - 1) & presentMask) {
         if (sub == presentMask) continue;
-        if (const int k = popcount64(sub); k < 2) continue;
 
         evalBucket(sub);
         if (bestH != 0 && bestScore >= 1.0f - 1e-6f) break;
