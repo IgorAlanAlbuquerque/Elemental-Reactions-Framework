@@ -8,7 +8,6 @@ class ERF_Gauge extends MovieClip
   private var rOut:Number;
   private var strokePx:Number;
 
-  private var _slotSpacingPx:Number;
   private var _slotBaseOffsetX:Number;
   private var _slotScale:Number;
 
@@ -24,7 +23,6 @@ class ERF_Gauge extends MovieClip
     rOut        = 7;
     strokePx    = 1.5;
 
-    _slotSpacingPx   = 40;
     _slotBaseOffsetX = -40;
     _slotScale       = 1.0;
 
@@ -110,7 +108,6 @@ class ERF_Gauge extends MovieClip
     var slot:MovieClip = gauge_mc.createEmptyMovieClip("slot_"+i, slotDepth);
     slot._xscale = slot._yscale = _slotScale * 100;
 
-    // subcamadas
     slot.halo_mc     = slot.createEmptyMovieClip("halo_mc",     0);
     slot.ring_bg_mc  = slot.createEmptyMovieClip("ring_bg_mc", 10);
     slot.ring_fg_mc  = slot.createEmptyMovieClip("ring_fg_mc", 20);
@@ -180,42 +177,57 @@ class ERF_Gauge extends MovieClip
 
   // ============ API ============
   public function setAll(comboRemain01:Array, comboTints:Array,
-                         accumValues:Array, accumColors:Array, isSingle:Boolean):Boolean
+                       accumValues:Array, accumColors:Array,
+                       isSingle:Boolean, isHorin:Boolean, spacing:Number):Boolean
   {
     if (!_ready) _tryInit();
+
+    if (isNaN(spacing)) spacing = 40;
 
     var n:Number = (comboRemain01 != null) ? comboRemain01.length : 0;
     if (comboTints == null) comboTints = [];
 
+    var _placeSlot = function(slot:MovieClip, idx:Number, isHor:Boolean, baseX:Number, baseY:Number, sp:Number):Void {
+      if (isHor) {
+        slot._x = baseX + (idx * sp);
+        slot._y = baseY;
+      } else {
+        slot._x = baseX;
+        slot._y = baseY + (idx * sp);
+      }
+    };
+
+    var baseX:Number = _slotBaseOffsetX;
+    var baseY:Number = 0;
+
+    // ===== COMBOS =====
     for (var i:Number = 0; i < n; ++i) {
       var slot:MovieClip = _ensureSlot(i);
-      slot._x = _slotBaseOffsetX + (i * _slotSpacingPx);
-      slot._y = 0;
+      _placeSlot(slot, i, isHorin, baseX, baseY, spacing);
 
       _slotClear(slot);
       var remain:Number = Number(comboRemain01[i]);
-      var tint:Number = Number(comboTints[i]);
-
+      var tint:Number   = Number(comboTints[i]);
       _slotDrawCombo(slot, remain, tint);
       slot._visible = true;
     }
-    
+
     var nextIndex:Number = n;
     var anyAccumDrawn:Boolean = false;
 
+    // ===== ACCUM =====
     var hasAccum:Boolean = false;
     if (accumValues != null) {
       var sum:Number = 0;
       for (var si:Number = 0; si < accumValues.length; ++si) {
-        var vv:Number = Number(accumValues[si]);
-        if (!isNaN(vv)) sum += vv;
+        var vv:Number = Number(accumValues[si]); if (!isNaN(vv)) sum += vv;
       }
       hasAccum = (sum > 0);
     }
 
     if (hasAccum) {
       if (isSingle) {
-        // ===== MODO SINGLE =====
+        // --- SINGLE ---
         var m:Number = accumValues.length;
         var drawn:Number = 0;
         for (var k:Number = 0; k < m; ++k) {
@@ -223,15 +235,13 @@ class ERF_Gauge extends MovieClip
           if (isNaN(v) || v <= 0) continue;
 
           var frac:Number = v / 100.0;
-          if (frac < 0) frac = 0;
-          if (frac > 1) frac = 1;
+          if (frac < 0) frac = 0; else if (frac > 1) frac = 1;
 
           var col:Number = (accumColors && !isNaN(Number(accumColors[k])))
                           ? Number(accumColors[k]) : 0xFFFFFF;
 
           var s:MovieClip = _ensureSlot(nextIndex + drawn);
-          s._x = _slotBaseOffsetX + ((nextIndex + drawn) * _slotSpacingPx);
-          s._y = 0;
+          _placeSlot(s, nextIndex + drawn, isHorin, baseX, baseY, spacing);
 
           _slotClear(s);
           _slotDrawCombo(s, frac, col);
@@ -239,15 +249,11 @@ class ERF_Gauge extends MovieClip
 
           drawn++;
         }
-        if (drawn > 0) {
-          anyAccumDrawn = true;
-          nextIndex += drawn;
-        }
+        if (drawn > 0) { anyAccumDrawn = true; nextIndex += drawn; }
       } else {
-        // ===== MIXED =====
+        // --- MIXED ---
         var aSlot:MovieClip = _ensureSlot(nextIndex);
-        aSlot._x = _slotBaseOffsetX + (nextIndex * _slotSpacingPx);
-        aSlot._y = 0;
+        _placeSlot(aSlot, nextIndex, isHorin, baseX, baseY, spacing);
 
         _slotClear(aSlot);
         _slotDrawAccum(aSlot, accumValues, accumColors);
