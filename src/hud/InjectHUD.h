@@ -65,20 +65,8 @@ namespace InjectHUD {
         double _lastX{std::numeric_limits<double>::quiet_NaN()};
         double _lastY{std::numeric_limits<double>::quiet_NaN()};
 
-        bool _hadContent{false};
-        double _lastGaugeRtS{std::numeric_limits<double>::quiet_NaN()};
-
-        double _risePerSec = 90.0;
-        double _fallPerSec = 600.0;
-        double _comboPerSec = 2.5;
-
-        Smooth01 _fireDisp{};
-        Smooth01 _frostDisp{};
-        Smooth01 _shockDisp{};
-        Smooth01 _comboDisp{};
-
-        static constexpr float kPlayerMarginLeftPx = 45.0f;
-        static constexpr float kPlayerMarginBottomPx = 160.0f;
+        static constexpr float kPlayerMarginLeftPx = 180.0f;
+        static constexpr float kPlayerMarginBottomPx = 120.0f;
         static constexpr float kPlayerScale = 1.5f;
 
         void Initialize() override;

@@ -79,21 +79,17 @@ namespace {
         return out;
     }
 
-    inline bool IsPlayerActor(RE::Actor* a) {
-        auto* pc = RE::PlayerCharacter::GetSingleton();
-        return a && pc && (a == pc);
-    }
+    inline bool IsPlayerActor(RE::Actor* a) { return a && a->IsPlayerRef(); }
 
     void FollowPlayerFixed(InjectHUD::ERFWidget& w) {
         if (!w._view) {
             return;
         }
-        RE::GRectF rect = w._view->GetVisibleFrameRect();
-        const double baseX = rect.left + InjectHUD::ERFWidget::kPlayerMarginLeftPx;
-        const double baseY = rect.bottom - InjectHUD::ERFWidget::kPlayerMarginBottomPx;
 
-        const double targetX = baseX;
-        const double targetY = baseY;
+        spdlog::info("[ERF HUD] FollowPlayerFixed");
+        RE::GRectF rect = w._view->GetVisibleFrameRect();
+        const double targetX = rect.left + InjectHUD::ERFWidget::kPlayerMarginLeftPx;
+        const double targetY = rect.bottom - InjectHUD::ERFWidget::kPlayerMarginBottomPx;
 
         if (w._needsSnap || std::isnan(w._lastX) || std::isnan(w._lastY)) {
             w._lastX = targetX;
@@ -130,8 +126,6 @@ void InjectHUD::ERFWidget::Initialize() {
 
     _needsSnap = true;
     ResetSmoothing();
-    _hadContent = false;
-    _lastGaugeRtS = std::numeric_limits<double>::quiet_NaN();
 
     _arraysInit = false;
     EnsureArrays();
@@ -345,7 +339,6 @@ void InjectHUD::AddFor(RE::Actor* actor) {
     }
 
     const auto h = actor->GetHandle();
-    g_trueHUD->AddActorInfoBar(h);
 
     auto w = std::make_shared<ERFWidget>();
     const auto wid = actor->GetFormID();
@@ -380,7 +373,6 @@ void InjectHUD::UpdateFor(RE::Actor* actor, double nowRt, float nowH) {
     }
 
     const auto h = actor->GetHandle();
-    g_trueHUD->AddActorInfoBar(h);
 
     std::vector<double> comboRemain01;
     std::vector<std::uint32_t> comboTintsRGB;
