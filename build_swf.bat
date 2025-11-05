@@ -9,7 +9,7 @@ rem === Pastas/arquivos ===
 set "SRC=flash\src"
 set "OUT=build"
 set "DIST=Interface\erfgauge"
-set "MO2=D:\MO2\mods\ElementalReactionsFramework\Interface\erfgauge"
+set "MO2=D:\ModdingSkyrim\MO2\mods\ElementalReactionsFramework\Interface\erfgauge"
 
 rem Templates
 set "GAUGE_XML=flash\gauge_template.xml"
@@ -28,7 +28,7 @@ rem 2) Compila a logica (AS2) em cima do base
 "%MTASC%" -version 8 -cp "%SRC%" -swf "%GAUGE_BASE%" -frame 1 -main "Register.as" -out "%GAUGE_OUT%" "%SRC%\ERF_Gauge.as" || goto :err
 
 rem 4) Copia DDS para MO2 (se existir)
-if exist "D:\MO2\mods" (
+if exist "D:\ModdingSkyrim\MO2\mods" (
   if not exist "%MO2%" mkdir "%MO2%"
   copy /Y "%GAUGE_OUT%" "%MO2%\erfgauge.swf" >nul
 )

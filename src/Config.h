@@ -10,6 +10,17 @@ namespace ERF {
         std::atomic<float> playerMult{1.0};
         std::atomic<float> npcMult{1.0};
 
+        std::atomic<float> playerXPosition{0.0};
+        std::atomic<float> playerYPosition{0.0};
+        std::atomic<float> npcXPosition{0.0};
+        std::atomic<float> npcYPosition{0.0};
+        std::atomic<float> playerScale{1.0};
+        std::atomic<float> npcScale{1.0};
+        std::atomic<bool> playerHorizontal{true};
+        std::atomic<bool> npcHorizontal{true};
+        std::atomic<float> playerSpacing{40.0};
+        std::atomic<float> npcSpacing{40.0};
+
         void Load();
         void Save() const;
 

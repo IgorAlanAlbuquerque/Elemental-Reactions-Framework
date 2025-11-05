@@ -46,12 +46,32 @@ namespace ERF {
         bool sgl = loadBool(ini, "Gauges", "Single", true);
         double pm = loadDouble(ini, "Gauges", "PlayerMult", 1.0);
         double nm = loadDouble(ini, "Gauges", "NpcMult", 1.0);
+        double px = loadDouble(ini, "HUD", "PlayerXPosition", 0.0);
+        double py = loadDouble(ini, "HUD", "PlayerYPosition", 0.0);
+        double nx = loadDouble(ini, "HUD", "NpcXPosition", 0.0);
+        double ny = loadDouble(ini, "HUD", "NpcYPosition", 0.0);
+        double psc = loadDouble(ini, "HUD", "PlayerScale", 1.0);
+        double nsc = loadDouble(ini, "HUD", "NpcScale", 1.0);
+        bool ph = loadBool(ini, "HUD", "PlayerHorizontal", true);
+        bool nh = loadBool(ini, "HUD", "NpcHorizontal", true);
+        double psp = loadDouble(ini, "HUD", "PlayerSpacing", 40.0);
+        double nsp = loadDouble(ini, "HUD", "NpcSpacing", 40.0);
 
         enabled.store(en, std::memory_order_relaxed);
         hudEnabled.store(hud, std::memory_order_relaxed);
         isSingle.store(sgl, std::memory_order_relaxed);
         playerMult.store(static_cast<float>(pm < 0 ? 0 : pm), std::memory_order_relaxed);
         npcMult.store(static_cast<float>(nm < 0 ? 0 : nm), std::memory_order_relaxed);
+        playerXPosition.store(static_cast<float>(px), std::memory_order_relaxed);
+        playerYPosition.store(static_cast<float>(py), std::memory_order_relaxed);
+        npcXPosition.store(static_cast<float>(nx), std::memory_order_relaxed);
+        npcYPosition.store(static_cast<float>(ny), std::memory_order_relaxed);
+        playerScale.store(static_cast<float>(psc > 0 ? psc : 1.0), std::memory_order_relaxed);
+        npcScale.store(static_cast<float>(nsc > 0 ? nsc : 1.0), std::memory_order_relaxed);
+        playerHorizontal.store(ph, std::memory_order_relaxed);
+        npcHorizontal.store(nh, std::memory_order_relaxed);
+        playerSpacing.store(static_cast<float>(psp < 0 ? 0 : psp), std::memory_order_relaxed);
+        npcSpacing.store(static_cast<float>(nsp < 0 ? 0 : nsp), std::memory_order_relaxed);
     }
 
     void Config::Save() const {
@@ -65,6 +85,16 @@ namespace ERF {
         ini.SetBoolValue("Gauges", "Single", isSingle.load(std::memory_order_relaxed));
         ini.SetDoubleValue("Gauges", "PlayerMult", playerMult.load(std::memory_order_relaxed));
         ini.SetDoubleValue("Gauges", "NpcMult", npcMult.load(std::memory_order_relaxed));
+        ini.SetDoubleValue("HUD", "PlayerXPosition", playerXPosition.load(std::memory_order_relaxed));
+        ini.SetDoubleValue("HUD", "PlayerYPosition", playerYPosition.load(std::memory_order_relaxed));
+        ini.SetDoubleValue("HUD", "NpcXPosition", npcXPosition.load(std::memory_order_relaxed));
+        ini.SetDoubleValue("HUD", "NpcYPosition", npcYPosition.load(std::memory_order_relaxed));
+        ini.SetDoubleValue("HUD", "PlayerScale", playerScale.load(std::memory_order_relaxed));
+        ini.SetDoubleValue("HUD", "NpcScale", npcScale.load(std::memory_order_relaxed));
+        ini.SetBoolValue("HUD", "PlayerHorizontal", playerHorizontal.load(std::memory_order_relaxed));
+        ini.SetBoolValue("HUD", "NpcHorizontal", npcHorizontal.load(std::memory_order_relaxed));
+        ini.SetDoubleValue("HUD", "PlayerSpacing", playerSpacing.load(std::memory_order_relaxed));
+        ini.SetDoubleValue("HUD", "NpcSpacing", npcSpacing.load(std::memory_order_relaxed));
 
         std::error_code ec;
         std::filesystem::create_directories(path.parent_path(), ec);

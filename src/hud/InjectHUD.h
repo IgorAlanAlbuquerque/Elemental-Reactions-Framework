@@ -62,6 +62,8 @@ namespace InjectHUD {
 
         bool _needsSnap = true;
 
+        bool _isPlayerWidget = false;
+
         double _lastX{std::numeric_limits<double>::quiet_NaN()};
         double _lastY{std::numeric_limits<double>::quiet_NaN()};
 
@@ -89,8 +91,10 @@ namespace InjectHUD {
         RE::GFxValue _arrAccumVals;
         RE::GFxValue _arrAccumCols;
         RE::GFxValue _isSingle;
+        RE::GFxValue _isHorin;
+        RE::GFxValue _spacing;
 
-        RE::GFxValue _args[5];
+        RE::GFxValue _args[7];
 
         void EnsureArrays();
         void FillArrayDoubles(RE::GFxValue& arr, const std::vector<double>& src);
