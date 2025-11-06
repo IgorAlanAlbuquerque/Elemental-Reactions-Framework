@@ -28,12 +28,8 @@ static ERF_API_V1* AcquireERF() {
 
     g_erf = ERF_GetAPI(ERF_API_VERSION);  // v1 estendida
     if (!g_erf) {
-        spdlog::warn("[ERF-Test] ERF API v{} ainda não disponível", ERF_API_VERSION);
         return nullptr;
     }
-    spdlog::info("[ERF-Test] ERF API v{} adquirida (open={}, frozen={})", g_erf->version,
-                 g_erf->IsRegistrationOpen ? g_erf->IsRegistrationOpen() : -1,
-                 g_erf->IsFrozen ? g_erf->IsFrozen() : -1);
     return g_erf;
 }
 
@@ -96,8 +92,6 @@ static void RegisterEverything_Core() {
         shock = api->RegisterElement(d);
     }
 
-    spdlog::info("[ERF-Test] Elements -> Fire={} Frost={} Shock={}", fire, frost, shock);
-
     // 2) Estados
     ERF_StateHandle wet{}, rubber{}, fur{};
     {
@@ -112,7 +106,6 @@ static void RegisterEverything_Core() {
         ERF_StateDesc_Public s{"Fur", 0};
         fur = api->RegisterState(s);
     }
-    spdlog::info("[ERF-Test] States -> Wet={} Rubber={} Fur={}", wet, rubber, fur);
 
     // 3) Multiplicadores estado×elemento
     api->SetElementStateMultiplier(fire, wet, 0.10);
@@ -145,7 +138,6 @@ static void RegisterEverything_Core() {
         p.user = nullptr;
 
         auto ph = api->RegisterPreEffect(p);
-        spdlog::info("[ERF-Test] PreEffect '{}' -> {}", p.name, ph);
     }
 
     // 5) Reação simples: Solo Fire 85% (callback de log)
@@ -172,10 +164,7 @@ static void RegisterEverything_Core() {
         r.user = nullptr;
 
         auto rh = api->RegisterReaction(r);
-        spdlog::info("[ERF-Test] Reaction '{}' -> {}", r.name, rh);
     }
-
-    spdlog::info("[ERF-Test] Registro concluído.");
 }
 
 // Envolve o registro com a JANELA/BARREIRA
@@ -196,15 +185,12 @@ static void RegisterEverything_WithWindow() {
         // Tente pelo menos logar o estado pra diagnosticar.
         const int open = api->IsRegistrationOpen ? (api->IsRegistrationOpen() ? 1 : 0) : -1;
         const int froz = api->IsFrozen ? (api->IsFrozen() ? 1 : 0) : -1;
-        spdlog::warn("[ERF-Test] BeginBatchRegistration falhou (open={}, frozen={}) — tentando registrar assim mesmo.",
-                     open, froz);
     }
 
     RegisterEverything_Core();
 
     if (usedBarrier && api->EndBatchRegistration) {
         api->EndBatchRegistration();
-        spdlog::info("[ERF-Test] EndBatchRegistration chamado.");
 
 #if FORCE_FREEZE_AFTER_END
         if (api->FreezeNow) {
@@ -232,7 +218,6 @@ static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg) {
 extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* skse) {
     SKSE::Init(skse);
     spdlog::set_level(spdlog::level::info);
-    spdlog::info("[ERF-Test] SKSEPlugin_Load");
 
     if (auto* m = SKSE::GetMessagingInterface()) {
         m->RegisterListener(OnSKSEMessage);  // só eventos SKSE; nada de “canal” da ERF

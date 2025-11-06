@@ -86,7 +86,6 @@ namespace {
             return;
         }
 
-        spdlog::info("[ERF HUD] FollowPlayerFixed");
         RE::GRectF rect = w._view->GetVisibleFrameRect();
         const double targetX = rect.left + InjectHUD::ERFWidget::kPlayerMarginLeftPx +
                                ERF::GetConfig().playerXPosition.load(std::memory_order_relaxed);

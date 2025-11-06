@@ -27,6 +27,8 @@
 using namespace SKSE;
 using namespace RE;
 
+const std::filesystem::path& ERF_GetThisDllDir();
+
 namespace {
     void InitializeLogger() {
         if (auto path = log::log_directory()) {
@@ -78,6 +80,7 @@ namespace {
 
                 ERF::GetConfig().Load();
                 ERF_UI::Register();
+                ERF::Overrides::SetGaugeEffect(ElementalGaugesHook::g_mgefGaugeAcc);
                 break;
             }
 
@@ -86,7 +89,6 @@ namespace {
             case SKSE::MessagingInterface::kPostLoadGame: {
                 InjectHUD::RemoveAllWidgets();
                 HUD::ResetTracking();
-                spdlog::info("[ERF] Reset após NewGame/PostLoad.");
                 break;
             }
 
@@ -106,20 +108,34 @@ extern "C" DLLEXPORT void* SKSEAPI RequestPluginAPI(std::uint32_t requestedVersi
 extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* skse) {
     SKSE::Init(skse);
     InitializeLogger();
-    spdlog::info("ERFDestruction carregado.");
 
     Ser::Install(FOURCC('E', 'L', 'R', 'E'));
-    spdlog::info("Serializador registrado.");
 
     ElementalStates::RegisterStore();
-    spdlog::info("Store de estados elementais registrado.");
     ElementalGauges::RegisterStore();
-    spdlog::info("Store de medidores elementais registrado.");
 
     if (const auto mi = SKSE::GetMessagingInterface()) {
         mi->RegisterListener(GlobalMessageHandler);
-        spdlog::info("Messaging listener (ciclo de vida) registrado.");
     }
 
     return true;
+}
+
+const std::filesystem::path& ERF_GetThisDllDir() {
+    static std::filesystem::path cached;
+    static bool init = false;
+    if (!init) {
+        init = true;
+
+        HMODULE self = nullptr;
+        if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               reinterpret_cast<LPCWSTR>(&SKSEPlugin_Load), &self)) {
+            wchar_t buf[MAX_PATH]{};
+            const DWORD n = GetModuleFileNameW(self, buf, static_cast<DWORD>(std::size(buf)));
+            if (n > 0) {
+                cached = std::filesystem::path(buf).parent_path();
+            }
+        }
+    }
+    return cached;
 }

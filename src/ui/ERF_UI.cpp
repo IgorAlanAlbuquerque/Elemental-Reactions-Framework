@@ -1,5 +1,9 @@
 #include "ERF_UI.h"
 
+#include <fstream>
+
+#include "../overrides/Overrides.h"
+
 void __stdcall ERF_UI::DrawGeneral() {
     ImGui::TextUnformatted("Elemental Reactions Framework");
     ImGui::Separator();
@@ -163,6 +167,171 @@ void __stdcall ERF_UI::DrawHUD() {
     }
 }
 
+struct _SpellRow {
+    RE::SpellItem* sp{};
+    std::string editorID;
+    std::string plugin;
+    std::string formHex;
+    std::string name;
+    float magnitude{};
+};
+
+static void _SaveSpellOverridesJSON(const std::vector<_SpellRow>& rows, float defaultMagnitude) {
+    if (!ERF::Overrides::EnsureOverridesFolder()) return;
+
+    const auto path = ERF::Overrides::OverridesPath();
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) return;
+
+    auto esc = [](const std::string& s) {
+        std::string r;
+        r.reserve(s.size() + 8);
+        for (unsigned char c : s) {
+            if (c == '\\' || c == '\"') {
+                r.push_back('\\');
+                r.push_back(char(c));
+            } else if (c == '\n') {
+                r += "\\n";
+            } else {
+                r.push_back(char(c));
+            }
+        }
+        return r;
+    };
+
+    out << "{\n";
+    out << "  \"version\": 1,\n";
+    out << "  \"defaultMagnitude\": " << defaultMagnitude << ",\n";
+    out << "  \"spells\": [\n";
+
+    for (size_t i = 0; i < rows.size(); ++i) {
+        const auto& r = rows[i];
+        out << "    {"
+            << "\"plugin\":\"" << esc(r.plugin) << "\","
+            << "\"formID\":\"" << r.formHex << "\","
+            << "\"magnitude\":" << r.magnitude << ","
+            << "\"editorID\":\"" << esc(r.editorID) << "\","
+            << "\"name\":\"" << esc(r.name) << "\""
+            << "}";
+        if (i + 1 < rows.size()) out << ",";
+        out << "\n";
+    }
+
+    out << "  ]\n"
+        << "}\n";
+}
+
+void __stdcall ERF_UI::DrawEditGauge() {
+    static bool initialized = false;
+    static std::vector<_SpellRow> rows;
+    static char filterBuf[96]{};
+    static float defaultMagnitude = 10.0f;
+
+    if (ImGui::Button("Refresh list")) initialized = false;
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(220.0f);
+    ImGui::InputTextWithHint("##filter", "filter by name or formID...", filterBuf, sizeof(filterBuf));
+
+    ImGui::Separator();
+
+    if (!initialized) {
+        initialized = true;
+        rows.clear();
+
+        auto list = ERF::Overrides::ScanAllSpellsWithKeyword();
+        rows.reserve(list.size());
+
+        for (auto* sp : list) {
+            if (!sp) continue;
+
+            ERF::Overrides::EnsureGaugeEffect(sp, defaultMagnitude);
+
+            _SpellRow r;
+            r.sp = sp;
+            r.editorID = ERF::Overrides::GetEditorID(sp);
+            r.plugin = ERF::Overrides::OwningPlugin(sp);
+            r.formHex = ERF::Overrides::FormIDHex(ERF::Overrides::RawFormID(sp));
+            r.name = ERF::Overrides::GetDisplayName(sp);
+
+            if (auto* eff = ERF::Overrides::FindGaugeEffect(sp))
+                r.magnitude = eff->effectItem.magnitude;
+            else
+                r.magnitude = defaultMagnitude;
+
+            rows.push_back(std::move(r));
+        }
+    }
+
+    auto passFilter = [&](const _SpellRow& r) -> bool {
+        if (filterBuf[0] == '\0') return true;
+
+        auto toLowerInPlace = [](std::string& s) {
+            std::transform(s.begin(), s.end(), s.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        };
+
+        std::string f = filterBuf;
+        std::string edid = r.editorID;
+        std::string plugin = r.plugin;
+        std::string form = r.formHex;
+        std::string name = r.name;
+
+        toLowerInPlace(f);
+        toLowerInPlace(edid);
+        toLowerInPlace(plugin);
+        toLowerInPlace(form);
+        toLowerInPlace(name);
+
+        if (edid.find(f) != std::string::npos) return true;
+        if (plugin.find(f) != std::string::npos) return true;
+        if (form.find(f) != std::string::npos) return true;
+        if (!name.empty() && name.find(f) != std::string::npos) return true;
+
+        return false;
+    };
+
+    if (ImGui::BeginTable("##erf_spells", 3,
+                          ImGuiTableFlags_Resizable | ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+        ImGui::TableSetupColumn("EditorID", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Plugin", ImGuiTableColumnFlags_WidthFixed, 180.0f);
+        ImGui::TableSetupColumn("Magnitude", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+        ImGui::TableHeadersRow();
+
+        for (auto& r : rows) {
+            if (!passFilter(r)) continue;
+            ImGui::TableNextRow();
+
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(r.editorID.empty() ? "<no EDID>" : r.editorID.c_str());
+            if (!r.name.empty()) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("  ⓘ");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", r.name.c_str());
+            }
+
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextUnformatted(r.plugin.c_str());
+
+            ImGui::TableSetColumnIndex(2);
+            ImGui::SetNextItemWidth(-1.0f);
+            float m = r.magnitude;
+            if (ImGui::InputFloat(std::string("##mag_").append(r.formHex).c_str(), &m, 0.1f, 1.0f, "%.3f")) {
+                if (m < 0.f) m = 0.f;
+                r.magnitude = m;
+                ERF::Overrides::SetGaugeMagnitude(r.sp, r.magnitude);
+            }
+        }
+        ImGui::EndTable();
+    }
+
+    ImGui::Separator();
+    if (ImGui::Button("Save to JSON")) {
+        _SaveSpellOverridesJSON(rows, defaultMagnitude);
+        ImGui::SameLine();
+        ImGui::TextDisabled("Saved to: %s", ERF::Overrides::OverridesPath().string().c_str());
+    }
+}
+
 void ERF_UI::Register() {
     if (!SKSEMenuFramework::IsInstalled()) return;
 
@@ -170,4 +339,5 @@ void ERF_UI::Register() {
 
     SKSEMenuFramework::AddSectionItem("General", ERF_UI::DrawGeneral);
     SKSEMenuFramework::AddSectionItem("HUD", ERF_UI::DrawHUD);
+    SKSEMenuFramework::AddSectionItem("Edit Gauges", ERF_UI::DrawEditGauge);
 }
