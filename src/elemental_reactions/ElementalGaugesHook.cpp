@@ -70,9 +70,6 @@ namespace {
 namespace GaugesHook {
     using Elem = ERF_ElementHandle;
 
-    static RE::BGSKeyword* g_kwGaugeAcc = nullptr;
-    static RE::EffectSetting* g_mgefGaugeAcc = nullptr;
-
     static StripedMap<std::uint64_t, double, 64> g_lastAccHint;
     static StripedMap<std::uint64_t, std::uint16_t, 64> g_lastAccCarrierUID;
 
@@ -90,11 +87,6 @@ namespace GaugesHook {
         return static_cast<std::uint64_t>(a ? a->GetFormID() : 0);
     }
 
-    static RE::BGSKeyword* LookupKW(const char* edid, std::uint32_t formID = 0) {
-        if (auto* k = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(edid)) return k;
-        if (formID) return RE::TESForm::LookupByID<RE::BGSKeyword>(formID);
-        return nullptr;
-    }
     static RE::EffectSetting* LookupMGEF(const char* edid, std::uint32_t formID = 0) {
         if (auto* m = RE::TESForm::LookupByEditorID<RE::EffectSetting>(edid)) return m;
         if (formID) return RE::TESForm::LookupByID<RE::EffectSetting>(formID);
@@ -104,18 +96,8 @@ namespace GaugesHook {
     static bool IsGaugeAccCarrier(const RE::EffectSetting* mgef) {
         if (!mgef) return false;
 
-        if (g_mgefGaugeAcc && mgef == g_mgefGaugeAcc) {
+        if (ElementalGaugesHook::g_mgefGaugeAcc && mgef == ElementalGaugesHook::g_mgefGaugeAcc) {
             return true;
-        }
-
-        if (g_kwGaugeAcc) {
-            const auto kwIDWant = g_kwGaugeAcc->GetFormID();
-            for (auto* kw : mgef->GetKeywords()) {
-                const auto id = kw ? kw->GetFormID() : 0u;
-                if (kw && id == kwIDWant) {
-                    return true;
-                }
-            }
         }
         return false;
     }
@@ -384,19 +366,11 @@ void ElementalGaugesHook::InitCarrierRefs() {
     using namespace GaugesHook;
     static constexpr const char* kPlugin = "ERF_Keywords.esp";
     constexpr std::uint32_t kMgefLocalID = 0x0000C804;
-    constexpr std::uint32_t kKwLocalID = 0x000000;
 
     auto* dh = RE::TESDataHandler::GetSingleton();
 
     g_mgefGaugeAcc = dh ? dh->LookupForm<RE::EffectSetting>(kMgefLocalID, kPlugin) : nullptr;
     if (!g_mgefGaugeAcc) {
         g_mgefGaugeAcc = LookupMGEF("ERF_GaugeAccEffect");
-    }
-
-    if (kKwLocalID) {
-        g_kwGaugeAcc = dh ? dh->LookupForm<RE::BGSKeyword>(kKwLocalID, kPlugin) : nullptr;
-    }
-    if (!g_kwGaugeAcc) {
-        g_kwGaugeAcc = LookupKW("ERF_GaugeAccKW");
     }
 }

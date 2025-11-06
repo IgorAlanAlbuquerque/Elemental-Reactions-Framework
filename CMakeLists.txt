@@ -28,11 +28,16 @@ add_commonlibsse_plugin(ElementalReactionsFramework
     src/ModAPI.cpp
     src/ui/ERF_UI.cpp
     src/Config.cpp
+    src/overrides/Overrides.cpp
+)
+
+target_compile_definitions(ElementalReactionsFramework PRIVATE
+  SKYRIM_SUPPORT_AE
+  SKYRIM_SUPPORT_SE
 )
 
 target_include_directories(ElementalReactionsFramework
   PRIVATE
-  ${truehud_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src )
@@ -58,6 +63,7 @@ target_precompile_headers(ElementalReactionsFramework PRIVATE
   src/ui/ERF_UI.h
   src/Offsets.h
   src/Config.h
+  src/overrides/Overrides.h
 )
 
 if(DEFINED OUTPUT_FOLDER)

@@ -9,7 +9,6 @@
 #include "elemental_reactions/erf_preeffect.h"
 #include "elemental_reactions/erf_reaction.h"
 #include "elemental_reactions/erf_state.h"
-#include "spdlog/spdlog.h"
 
 namespace {
     std::atomic<int> g_reg_barrier{0};
@@ -32,7 +31,6 @@ namespace {
         g_caps.numStates = static_cast<std::uint16_t>(StateRegistry::get().size());
         g_caps.numReactions = static_cast<std::uint16_t>(ReactionRegistry::get().size());
         g_caps.ready = true;
-        spdlog::info("[ERF] Registries selados.");
     }
 }
 

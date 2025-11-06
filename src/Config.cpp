@@ -6,7 +6,7 @@
 #include <cctype>
 #include <string>
 
-namespace ERF {
+namespace {
     static bool loadBool(CSimpleIniA& ini, const char* sec, const char* key, bool defVal) {
         const char* val = ini.GetValue(sec, key, nullptr);
         if (!val) return defVal;
@@ -24,14 +24,23 @@ namespace ERF {
         double d = std::strtod(v, &end);
         return (end && *end == '\0') ? d : defVal;
     }
+}
+
+const std::filesystem::path& ERF_GetThisDllDir();
+
+namespace ERF {
 
     std::filesystem::path Config::IniPath() {
-        auto dirOpt = SKSE::log::log_directory();
-        if (!dirOpt) {
-            return std::filesystem::path("ElementalReactionsFramework.ini");
+        const auto& dllDir = ERF_GetThisDllDir();
+        if (!dllDir.empty()) {
+            return dllDir / "ERF" / "ElementalReactionsFramework.ini";
         }
-        auto p = *dirOpt / "ElementalReactionsFramework.ini";
-        return p;
+
+        if (auto dirOpt = SKSE::log::log_directory()) {
+            return *dirOpt / "ERF" / "ElementalReactionsFramework.ini";
+        }
+
+        return std::filesystem::path("Data") / "SKSE" / "Plugins" / "ERF" / "ElementalReactionsFramework.ini";
     }
 
     void Config::Load() {
