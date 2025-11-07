@@ -293,8 +293,8 @@ void __stdcall ERF_UI::DrawEditGauge() {
     if (ImGui::BeginTable("##erf_spells", 3,
                           ImGuiTableFlags_Resizable | ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupColumn("EditorID", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Plugin", ImGuiTableColumnFlags_WidthFixed, 180.0f);
-        ImGui::TableSetupColumn("Magnitude", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+        ImGui::TableSetupColumn("Plugin", ImGuiTableColumnFlags_WidthFixed, 200.0f);
+        ImGui::TableSetupColumn("Magnitude", ImGuiTableColumnFlags_WidthFixed, 200.0f);
         ImGui::TableHeadersRow();
 
         for (auto& r : rows) {

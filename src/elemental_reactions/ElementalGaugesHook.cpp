@@ -21,6 +21,8 @@
 
 using namespace std::chrono;
 
+RE::EffectSetting* ElementalGaugesHook::g_mgefGaugeAcc = nullptr;
+
 namespace {
     template <class K, class V, std::size_t N = 64>
     struct StripedMap {

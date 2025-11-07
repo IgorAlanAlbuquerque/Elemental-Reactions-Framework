@@ -8,8 +8,61 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <nlohmann/json.hpp>
 
 #include "RE/T/TESForm.h"
+
+namespace {
+    using json = nlohmann::json;
+    RE::SpellItem* findByPluginAndBaseID(std::string_view plugin, std::uint32_t baseID) {
+        auto* dh = RE::TESDataHandler::GetSingleton();
+        if (!dh) return nullptr;
+        RE::SpellItem* best = nullptr;
+        int bestLO = -1;
+
+        auto getLO = [&](const RE::TESFile* f) -> int {
+            if (!f) return -1;
+            int i = 0;
+            for (auto* file : dh->files) {
+                if (file == f) return i;
+                ++i;
+            }
+            return -1;
+        };
+
+        for (auto* sp : dh->GetFormArray<RE::SpellItem>()) {
+            if (!sp) continue;
+            const auto* owner = sp->GetDescriptionOwnerFile();
+            if (!owner) continue;
+
+            if (_stricmp(std::string(owner->GetFilename()).c_str(), std::string(plugin).c_str()) != 0) continue;
+
+            if ((sp->formID & 0x00FFFFFF) != (baseID & 0x00FFFFFF)) continue;
+
+            const int lo = getLO(owner);
+            if (lo > bestLO) {
+                bestLO = lo;
+                best = sp;
+            }
+        }
+        return best;
+    }
+
+    bool parseBaseID(const json& j, std::uint32_t& out) {
+        if (j.is_string()) {
+            std::string s = j.get<std::string>();
+            if (s.rfind("0x", 0) == 0 || s.rfind("0X", 0) == 0) s.erase(0, 2);
+            if (s.size() > 8) return false;
+            out = static_cast<std::uint32_t>(std::stoul(s, nullptr, 16));
+            return true;
+        } else if (j.is_number_unsigned()) {
+            out = j.get<std::uint32_t>();
+            return true;
+        }
+        return false;
+    }
+}
 
 bool SpellKey::operator==(const SpellKey& o) const noexcept {
     return formID == o.formID && _stricmp(plugin.c_str(), o.plugin.c_str()) == 0;
@@ -28,8 +81,6 @@ static std::unordered_set<RE::BGSKeyword*> s_erfKeywords;
 bool ERF::Overrides::InitResources() { return (s_mgefGauge != nullptr); }
 
 void ERF::Overrides::SetGaugeEffect(RE::EffectSetting* mgef) { s_mgefGauge = mgef; }
-
-void ERF::Overrides::SetERFKeywords(std::unordered_set<RE::BGSKeyword*> kws) { s_erfKeywords = std::move(kws); }
 
 bool ERF::Overrides::HasERFKeyword(const RE::EffectSetting* mgef) {
     if (!mgef) return false;
@@ -186,4 +237,63 @@ std::string_view ERF::Overrides::OwningPlugin(const RE::TESForm* f) {
 std::uint32_t ERF::Overrides::RawFormID(const RE::TESForm* f) {
     if (!f) return 0;
     return f->formID;
+}
+
+std::size_t ERF::Overrides::ApplyOverridesFromJSON() {
+    const auto& path = OverridesPath();
+    std::ifstream in(path);
+    if (!in.good()) {
+        spdlog::info("[ERF][Overrides] JSON não encontrado: {}", path.string());
+        return 0;
+    }
+
+    json root;
+    try {
+        root = json::parse(in);
+    } catch (const std::exception& e) {
+        spdlog::error("[ERF][Overrides] Parse falhou em {}: {}", path.string(), e.what());
+        return 0;
+    }
+
+    auto applyArray = [&](const json& arr) -> std::size_t {
+        if (!arr.is_array()) return 0;
+        std::size_t applied = 0;
+        for (const auto& e : arr) {
+            try {
+                const auto& jpl = e.at("plugin");
+                const auto& jid = e.at("formID");
+                const auto& jmag = e.at("magnitude");
+
+                std::string plugin = jpl.get<std::string>();
+                std::uint32_t baseID{};
+                if (!parseBaseID(jid, baseID)) {
+                    spdlog::warn("[ERF][Overrides] formID inválido ({}).", jid.dump());
+                    continue;
+                }
+                float mag = jmag.get<float>();
+                if (mag < 0.f) mag = 0.f;
+
+                if (auto* sp = findByPluginAndBaseID(plugin, baseID)) {
+                    EnsureGaugeEffect(sp, mag);
+                    SetGaugeMagnitude(sp, mag);
+                    ++applied;
+                } else {
+                    spdlog::warn("[ERF][Overrides] Spell não encontrada: {} {:06X}", plugin, baseID & 0x00FFFFFF);
+                }
+            } catch (const std::exception& ex) {
+                spdlog::warn("[ERF][Overrides] Entrada inválida: {}", ex.what());
+            }
+        }
+        return applied;
+    };
+
+    std::size_t total = 0;
+    if (root.is_object() && root.contains("spells")) {
+        total += applyArray(root["spells"]);
+    } else if (root.is_array()) {
+        total += applyArray(root);
+    } else {
+        spdlog::warn("[ERF][Overrides] Formato inesperado (esperado array ou objeto com 'spells').");
+    }
+    return total;
 }
