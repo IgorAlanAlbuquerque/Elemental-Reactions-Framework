@@ -45,6 +45,23 @@ namespace InjectHUD {
         WidgetPtr widget;
     };
 
+    struct HUDFrameSnapshot {
+        bool hudEnabled{true};
+        bool isSingle{true};
+        bool playerHorizontal{true};
+        bool npcHorizontal{true};
+        float playerSpacing{40.0f};
+        float npcSpacing{40.0f};
+        double nowRtS{0.0};
+        float nowH{0.f};
+        float playerX{0.0f};
+        float playerY{0.0f};
+        float playerScale{1.0f};
+        float npcX{0.0f};
+        float npcY{0.0f};
+        float npcScale{1.0f};
+    };
+
     constexpr auto ERF_SWF_PATH = "erfgauge/erfgauge.swf";
     constexpr auto ERF_SYMBOL_NAME = "ERF_Gauge";
     constexpr uint32_t ERF_WIDGET_TYPE = FOURCC('E', 'L', 'R', 'E');
@@ -71,6 +88,9 @@ namespace InjectHUD {
         static constexpr float kPlayerMarginBottomPx = 120.0f;
         static constexpr float kPlayerScale = 1.5f;
 
+        bool _lastVisible{false};
+        float _lastScale{std::numeric_limits<float>::quiet_NaN()};
+
         void Initialize() override;
         void Update(float) override {}
         void Dispose() override {}
@@ -78,10 +98,11 @@ namespace InjectHUD {
         void FollowActorHead(RE::Actor* actor);
 
         void SetAll(const std::vector<double>& comboRemain01, const std::vector<std::uint32_t>& comboTintsRGB,
-                    const std::vector<double>& accumValues, const std::vector<std::uint32_t>& accumColorsRGB);
+                    const std::vector<double>& accumValues, const std::vector<std::uint32_t>& accumColorsRGB,
+                    bool isSingle, bool isHorizontal, float spacingPx);
 
         void ResetSmoothing() { _lastX = _lastY = std::numeric_limits<double>::quiet_NaN(); }
-        void ClearAndHide();
+        void ClearAndHide(bool isSingle, bool isHorizontal, float spacingPx);
 
     private:
         bool _arraysInit{false};
@@ -93,6 +114,10 @@ namespace InjectHUD {
         RE::GFxValue _isSingle;
         RE::GFxValue _isHorin;
         RE::GFxValue _spacing;
+
+        bool _lastIsSingle{true};
+        bool _lastIsHor{true};
+        float _lastSpacing{std::numeric_limits<float>::quiet_NaN()};
 
         RE::GFxValue _args[7];
 
