@@ -10,6 +10,7 @@
 
 #include "../Config.h"
 #include "../elemental_reactions/ElementalGauges.h"
+#include "HUDTick.h"
 #include "Offsets.h"
 #include "Utils.h"
 
@@ -444,10 +445,10 @@ void InjectHUD::BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float sec
     pr.secs = seconds;
     pr.realTime = realTime;
 
-    {
-        std::scoped_lock lk(g_comboMx);
-        g_comboQueue.push_back(std::move(pr));
-    }
+    std::scoped_lock lk(g_comboMx);
+    g_comboQueue.push_back(std::move(pr));
+
+    HUD::StartHUDTick();
 }
 
 bool InjectHUD::HideFor(RE::FormID id) {
