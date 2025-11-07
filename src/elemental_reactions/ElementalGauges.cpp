@@ -699,8 +699,10 @@ namespace {
 void ElementalGauges::Add(RE::Actor* a, ERF_ElementHandle elem, int delta) {
     if (!a || delta <= 0) return;
 
-    auto& e = Gauges::state()[a->GetFormID()];
-    Gauges::initEntryDenseIfNeeded(e);
+    auto& M = Gauges::state();
+    auto [__it, __inserted] = M.try_emplace(a->GetFormID());
+    auto& e = __it->second;
+    if (__inserted) Gauges::initEntryDenseIfNeeded(e);
 
     const auto i = Gauges::idx(elem);
     const float nowH = NowHours();
@@ -763,8 +765,10 @@ std::uint8_t ElementalGauges::Get(RE::Actor* a, ERF_ElementHandle elem) {
 void ElementalGauges::Set(RE::Actor* a, ERF_ElementHandle elem, std::uint8_t value) {
     if (!a || elem == 0) return;
 
-    auto& e = Gauges::state()[a->GetFormID()];
-    Gauges::initEntryDenseIfNeeded(e);
+    auto& M = Gauges::state();
+    auto [__it, __inserted] = M.try_emplace(a->GetFormID());
+    auto& e = __it->second;
+    if (__inserted) Gauges::initEntryDenseIfNeeded(e);
 
     const std::size_t i = Gauges::idx(elem);
     const float nowH = NowHours();

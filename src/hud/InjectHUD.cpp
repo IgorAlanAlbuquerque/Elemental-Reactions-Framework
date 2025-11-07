@@ -61,7 +61,8 @@ namespace {
                 hud.tint = 0xFFFFFF;
             }
 
-            auto& vec = combos[pr.id];
+            auto [__itC, __insertedC] = combos.try_emplace(pr.id);
+            auto& vec = __itC->second;
             std::erase_if(vec, [nowRt, nowH](const ActiveReactionHUD& c) {
                 return c.realTime ? (nowRt >= c.endRtS) : (nowH >= c.endH);
             });
@@ -104,8 +105,9 @@ namespace {
         constexpr double EPS_POS = 0.5;
         constexpr float EPS_SCL = 0.01f;
         const bool posChanged = (std::fabs(px - w._lastX) > EPS_POS) || (std::fabs(py - w._lastY) > EPS_POS);
-        const bool sclChanged = (!std::isfinite(w._lastScale)) || (std::fabs(sc - w._lastScale) > EPS_SCL);
-        if (posChanged || sclChanged) {
+
+        if (const bool sclChanged = (!std::isfinite(w._lastScale)) || (std::fabs(sc - w._lastScale) > EPS_SCL);
+            posChanged || sclChanged) {
             RE::GFxValue::DisplayInfo di;
             di.SetPosition(static_cast<float>(px), static_cast<float>(py));
             di.SetScale(sc, sc);
@@ -138,7 +140,7 @@ namespace {
         auto h = fnv1a64_init();
         for (double d : v) {
             long long q = llround(d * 1000.0);
-            const std::uint8_t* p = reinterpret_cast<const std::uint8_t*>(&q);
+            const auto* p = reinterpret_cast<const std::uint8_t*>(&q);
             for (std::size_t i = 0; i < sizeof(q); ++i) h = fnv1a64_mix(h, p[i]);
         }
         return h;
@@ -146,7 +148,7 @@ namespace {
     static std::uint64_t hash_u32(const std::vector<std::uint32_t>& v) {
         auto h = fnv1a64_init();
         for (std::uint32_t x : v) {
-            const std::uint8_t* p = reinterpret_cast<const std::uint8_t*>(&x);
+            const auto* p = reinterpret_cast<const std::uint8_t*>(&x);
             for (std::size_t i = 0; i < sizeof(x); ++i) h = fnv1a64_mix(h, p[i]);
         }
         return h;
@@ -306,8 +308,7 @@ bool InjectHUD::ERFWidget::FillArrayDoubles(RE::GFxValue& arr, const std::vector
                                             std::uint64_t& lastHash) {
     bool changed = false;
     const std::uint32_t cur = arr.GetArraySize();
-    const std::uint32_t want = static_cast<std::uint32_t>(src.size());
-    if (cur != want) {
+    if (const auto want = static_cast<std::uint32_t>(src.size()); cur != want) {
         _view->CreateArray(&arr);
         for (double d : src) {
             RE::GFxValue v;
@@ -323,8 +324,7 @@ bool InjectHUD::ERFWidget::FillArrayDoubles(RE::GFxValue& arr, const std::vector
         }
     }
 
-    const std::uint64_t h = hash_doubles_q(src);
-    if (h != lastHash) {
+    if (const std::uint64_t h = hash_doubles_q(src); h != lastHash) {
         changed = true;
         lastHash = h;
     }
@@ -335,8 +335,8 @@ bool InjectHUD::ERFWidget::FillArrayU32AsNumber(RE::GFxValue& arr, const std::ve
                                                 std::uint64_t& lastHash) {
     bool changed = false;
     const std::uint32_t cur = arr.GetArraySize();
-    const std::uint32_t want = static_cast<std::uint32_t>(src.size());
-    if (cur != want) {
+
+    if (const auto want = static_cast<std::uint32_t>(src.size()); cur != want) {
         _view->CreateArray(&arr);
         for (std::uint32_t u : src) {
             RE::GFxValue v;
@@ -351,8 +351,8 @@ bool InjectHUD::ERFWidget::FillArrayU32AsNumber(RE::GFxValue& arr, const std::ve
             arr.SetElement(i, v);
         }
     }
-    const std::uint64_t h = hash_u32(src);
-    if (h != lastHash) {
+
+    if (const std::uint64_t h = hash_u32(src); h != lastHash) {
         changed = true;
         lastHash = h;
     }
@@ -448,7 +448,8 @@ void InjectHUD::AddFor(RE::Actor* actor) {
     }
 
     const auto id = actor->GetFormID();
-    auto& entry = widgets[id];
+    auto [__itW, __insertedW] = widgets.try_emplace(id);
+    auto& entry = __itW->second;
     entry.handle = actor->CreateRefHandle();
 
     if (entry.widget) {
