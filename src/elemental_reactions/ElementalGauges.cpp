@@ -17,6 +17,7 @@
 #include "../Config.h"
 #include "../common/Helpers.h"
 #include "../common/PluginSerialization.h"
+#include "../hud/HUDTick.h"
 #include "../hud/InjectHUD.h"
 #include "ElementalStates.h"
 #include "erf_preeffect.h"
@@ -701,6 +702,8 @@ void ElementalGauges::Add(RE::Actor* a, ERF_ElementHandle elem, int delta) {
     e.lastHitH[i] = nowH;
     e.lastEvalH[i] = nowH;
     onValChange(e, i, before, afterI);
+
+    HUD::StartHUDTick();
 
     if (const bool singleMode = ERF::GetConfig().isSingle.load(std::memory_order_relaxed); singleMode) {
         // SINGLE

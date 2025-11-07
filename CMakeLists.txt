@@ -31,11 +31,6 @@ add_commonlibsse_plugin(ElementalReactionsFramework
     src/overrides/Overrides.cpp
 )
 
-target_compile_definitions(ElementalReactionsFramework PRIVATE
-  SKYRIM_SUPPORT_AE
-  SKYRIM_SUPPORT_SE
-)
-
 target_include_directories(ElementalReactionsFramework
   PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/include
