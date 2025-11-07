@@ -703,7 +703,9 @@ void ElementalGauges::Add(RE::Actor* a, ERF_ElementHandle elem, int delta) {
     e.lastEvalH[i] = nowH;
     onValChange(e, i, before, afterI);
 
-    HUD::StartHUDTick();
+    if (ERF::GetConfig().hudEnabled.load(std::memory_order_relaxed)) {
+        HUD::StartHUDTick();
+    }
 
     if (const bool singleMode = ERF::GetConfig().isSingle.load(std::memory_order_relaxed); singleMode) {
         // SINGLE

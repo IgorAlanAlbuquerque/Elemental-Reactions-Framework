@@ -26,9 +26,11 @@ namespace InjectHUD {
 namespace {
     using namespace InjectHUD;
 
+    static thread_local HUDFrameSnapshot g_snap{};
+
     inline float NowHours() { return RE::Calendar::GetSingleton()->GetHoursPassed(); }
 
-    static void DrainComboQueueOnUI(double nowRt, float nowH) {
+    void DrainComboQueueOnUI(double nowRt, float nowH) {
         std::deque<PendingReaction> take;
         {
             std::scoped_lock lk(g_comboMx);
@@ -36,11 +38,10 @@ namespace {
         }
         if (take.empty()) return;
 
-        auto& RR = ReactionRegistry::get();
+        auto const& RR = ReactionRegistry::get();
 
-        for (auto& pr : take) {
-            RE::Actor* a = pr.handle ? pr.handle.get().get() : nullptr;
-            if (a) {
+        for (auto const& pr : take) {
+            if (RE::Actor* a = pr.handle ? pr.handle.get().get() : nullptr; a) {
                 InjectHUD::AddFor(a);
             }
 
@@ -83,38 +84,72 @@ namespace {
     inline bool IsPlayerActor(RE::Actor* a) { return a && a->IsPlayerRef(); }
 
     void FollowPlayerFixed(InjectHUD::ERFWidget& w) {
-        if (!w._view) {
-            return;
-        }
+        if (!w._view) return;
 
-        RE::GRectF rect = w._view->GetVisibleFrameRect();
-        const double targetX = rect.left + InjectHUD::ERFWidget::kPlayerMarginLeftPx +
-                               ERF::GetConfig().playerXPosition.load(std::memory_order_relaxed);
-        const double targetY = rect.bottom - InjectHUD::ERFWidget::kPlayerMarginBottomPx -
-                               ERF::GetConfig().playerYPosition.load(std::memory_order_relaxed);
+        const RE::GRectF rect = w._view->GetVisibleFrameRect();
+        const double targetX = rect.left + InjectHUD::ERFWidget::kPlayerMarginLeftPx + g_snap.playerX;
+        const double targetY = rect.bottom - InjectHUD::ERFWidget::kPlayerMarginBottomPx - g_snap.playerY;
 
-        if (w._needsSnap || std::isnan(w._lastX) || std::isnan(w._lastY)) {
+        if (w._needsSnap || std::isnan(w._lastX) || std::isnan(w._lastY) || std::isnan(w._lastScale)) {
             w._lastX = targetX;
             w._lastY = targetY;
+            w._lastScale = 100.0f * InjectHUD::ERFWidget::kPlayerScale * g_snap.playerScale;
             w._needsSnap = false;
         }
 
         const double px = std::floor(targetX + 0.5);
         const double py = std::floor(targetY + 0.5);
+        const float sc = 100.0f * InjectHUD::ERFWidget::kPlayerScale * g_snap.playerScale;
 
-        RE::GFxValue::DisplayInfo di;
-        di.SetPosition(static_cast<float>(px), static_cast<float>(py));
-        di.SetScale(
-            100.0f * InjectHUD::ERFWidget::kPlayerScale * ERF::GetConfig().playerScale.load(std::memory_order_relaxed),
-            100.0f * InjectHUD::ERFWidget::kPlayerScale * ERF::GetConfig().playerScale.load(std::memory_order_relaxed));
-        w._object.SetDisplayInfo(di);
+        constexpr double EPS_POS = 0.5;
+        constexpr float EPS_SCL = 0.01f;
+        const bool posChanged = (std::fabs(px - w._lastX) > EPS_POS) || (std::fabs(py - w._lastY) > EPS_POS);
+        const bool sclChanged = (!std::isfinite(w._lastScale)) || (std::fabs(sc - w._lastScale) > EPS_SCL);
+        if (posChanged || sclChanged) {
+            RE::GFxValue::DisplayInfo di;
+            di.SetPosition(static_cast<float>(px), static_cast<float>(py));
+            di.SetScale(sc, sc);
+            w._object.SetDisplayInfo(di);
+            w._lastX = px;
+            w._lastY = py;
+            w._lastScale = sc;
+        }
 
-        RE::GFxValue vis;
-        vis.SetBoolean(true);
-        w._object.SetMember("_visible", vis);
+        if (!w._lastVisible) {
+            RE::GFxValue vis;
+            vis.SetBoolean(true);
+            w._object.SetMember("_visible", vis);
+            w._lastVisible = true;
+        }
+    }
 
-        w._lastX = px;
-        w._lastY = py;
+    static inline std::uint64_t fnv1a64_init() { return 1469598103934665603ull; }
+    static inline std::uint64_t fnv1a64_mix(std::uint64_t h, std::uint8_t b) {
+        h ^= b;
+        return h * 1099511628211ull;
+    }
+    template <class It>
+    static std::uint64_t hash_bytes(It first, It last) {
+        auto h = fnv1a64_init();
+        for (; first != last; ++first) h = fnv1a64_mix(h, static_cast<std::uint8_t>(*first));
+        return h;
+    }
+    static std::uint64_t hash_doubles_q(const std::vector<double>& v) {
+        auto h = fnv1a64_init();
+        for (double d : v) {
+            long long q = llround(d * 1000.0);
+            const std::uint8_t* p = reinterpret_cast<const std::uint8_t*>(&q);
+            for (std::size_t i = 0; i < sizeof(q); ++i) h = fnv1a64_mix(h, p[i]);
+        }
+        return h;
+    }
+    static std::uint64_t hash_u32(const std::vector<std::uint32_t>& v) {
+        auto h = fnv1a64_init();
+        for (std::uint32_t x : v) {
+            const std::uint8_t* p = reinterpret_cast<const std::uint8_t*>(&x);
+            for (std::size_t i = 0; i < sizeof(x); ++i) h = fnv1a64_mix(h, p[i]);
+        }
+        return h;
     }
 }
 
@@ -144,17 +179,23 @@ void InjectHUD::ERFWidget::FollowActorHead(RE::Actor* actor) {
     }
 
     if (!g_viewPort || !g_worldToCamMatrix) {
-        RE::GFxValue vis;
-        vis.SetBoolean(false);
-        _object.SetMember("_visible", vis);
+        if (_lastVisible) {
+            RE::GFxValue vis;
+            vis.SetBoolean(false);
+            _object.SetMember("_visible", vis);
+            _lastVisible = false;
+        }
         return;
     }
 
     RE::NiPoint3 world{};
     if (!Utils::GetTargetPos(actor->CreateRefHandle(), world, true)) {
-        RE::GFxValue vis;
-        vis.SetBoolean(false);
-        _object.SetMember("_visible", vis);
+        if (_lastVisible) {
+            RE::GFxValue vis;
+            vis.SetBoolean(false);
+            _object.SetMember("_visible", vis);
+            _lastVisible = false;
+        }
         return;
     }
 
@@ -165,9 +206,12 @@ void InjectHUD::ERFWidget::FollowActorHead(RE::Actor* actor) {
     RE::NiCamera::WorldPtToScreenPt3((float (*)[4])g_worldToCamMatrix, *g_viewPort, world, nx, ny, depth, 1e-5f);
 
     if (depth < 0.f || nx < 0.f || nx > 1.f || ny < 0.f || ny > 1.f) {
-        RE::GFxValue vis;
-        vis.SetBoolean(false);
-        _object.SetMember("_visible", vis);
+        if (_lastVisible) {
+            RE::GFxValue vis;
+            vis.SetBoolean(false);
+            _object.SetMember("_visible", vis);
+            _lastVisible = false;
+        }
         return;
     }
 
@@ -191,9 +235,10 @@ void InjectHUD::ERFWidget::FollowActorHead(RE::Actor* actor) {
     constexpr double SMOOTH_FACTOR = 0.15;
     constexpr double MIN_DELTA = 0.25;
 
-    if (_needsSnap || std::isnan(_lastX) || std::isnan(_lastY)) {
+    if (_needsSnap || std::isnan(_lastX) || std::isnan(_lastY) || std::isnan(_lastScale)) {
         _lastX = px;
         _lastY = py;
+        _lastScale = scalePct * std::max(0.0f, g_snap.npcScale);
         _needsSnap = false;
     }
 
@@ -207,9 +252,9 @@ void InjectHUD::ERFWidget::FollowActorHead(RE::Actor* actor) {
         py = _lastY;
     }
 
-    const float offX = ERF::GetConfig().npcXPosition.load(std::memory_order_relaxed);
-    const float offY = ERF::GetConfig().npcYPosition.load(std::memory_order_relaxed);
-    const float scMul = std::max(0.0f, ERF::GetConfig().npcScale.load(std::memory_order_relaxed));
+    const float offX = g_snap.npcX;
+    const float offY = g_snap.npcY;
+    const float scMul = std::max(0.0f, g_snap.npcScale);
 
     px += offX;
     py -= offY;
@@ -219,17 +264,26 @@ void InjectHUD::ERFWidget::FollowActorHead(RE::Actor* actor) {
 
     const float finalScalePct = scalePct * scMul;
 
-    RE::GFxValue::DisplayInfo di;
-    di.SetPosition(static_cast<float>(px), static_cast<float>(py));
-    di.SetScale(finalScalePct, finalScalePct);
-    _object.SetDisplayInfo(di);
+    constexpr double EPS_POS = 0.5;
+    constexpr float EPS_SCL = 0.01f;
+    const bool posChanged = (std::fabs(px - _lastX) > EPS_POS) || (std::fabs(py - _lastY) > EPS_POS);
+    if (const bool sclChanged = (!std::isfinite(_lastScale)) || (std::fabs(finalScalePct - _lastScale) > EPS_SCL);
+        posChanged || sclChanged) {
+        RE::GFxValue::DisplayInfo di;
+        di.SetPosition(static_cast<float>(px), static_cast<float>(py));
+        di.SetScale(finalScalePct, finalScalePct);
+        _object.SetDisplayInfo(di);
+        _lastX = px;
+        _lastY = py;
+        _lastScale = finalScalePct;
+    }
 
-    RE::GFxValue vis;
-    vis.SetBoolean(true);
-    _object.SetMember("_visible", vis);
-
-    _lastX = px;
-    _lastY = py;
+    if (!_lastVisible) {
+        RE::GFxValue vis;
+        vis.SetBoolean(true);
+        _object.SetMember("_visible", vis);
+        _lastVisible = true;
+    }
 }
 
 void InjectHUD::ERFWidget::EnsureArrays() {
@@ -248,43 +302,64 @@ void InjectHUD::ERFWidget::EnsureArrays() {
     _arraysInit = true;
 }
 
-void InjectHUD::ERFWidget::FillArrayDoubles(RE::GFxValue& arr, const std::vector<double>& src) {
+bool InjectHUD::ERFWidget::FillArrayDoubles(RE::GFxValue& arr, const std::vector<double>& src,
+                                            std::uint64_t& lastHash) {
+    bool changed = false;
     const std::uint32_t cur = arr.GetArraySize();
-    if (cur != src.size()) {
+    const std::uint32_t want = static_cast<std::uint32_t>(src.size());
+    if (cur != want) {
         _view->CreateArray(&arr);
         for (double d : src) {
             RE::GFxValue v;
             v.SetNumber(d);
             arr.PushBack(v);
         }
-        return;
+        changed = true;
+    } else {
+        for (std::uint32_t i = 0; i < cur; ++i) {
+            RE::GFxValue v;
+            v.SetNumber(src[i]);
+            arr.SetElement(i, v);
+        }
     }
-    for (std::uint32_t i = 0; i < cur; ++i) {
-        RE::GFxValue v;
-        v.SetNumber(src[i]);
-        arr.SetElement(i, v);
+
+    const std::uint64_t h = hash_doubles_q(src);
+    if (h != lastHash) {
+        changed = true;
+        lastHash = h;
     }
+    return changed;
 }
 
-void InjectHUD::ERFWidget::FillArrayU32AsNumber(RE::GFxValue& arr, const std::vector<std::uint32_t>& src) {
+bool InjectHUD::ERFWidget::FillArrayU32AsNumber(RE::GFxValue& arr, const std::vector<std::uint32_t>& src,
+                                                std::uint64_t& lastHash) {
+    bool changed = false;
     const std::uint32_t cur = arr.GetArraySize();
-    if (cur != src.size()) {
+    const std::uint32_t want = static_cast<std::uint32_t>(src.size());
+    if (cur != want) {
         _view->CreateArray(&arr);
         for (std::uint32_t u : src) {
             RE::GFxValue v;
             v.SetNumber(static_cast<double>(u));
             arr.PushBack(v);
         }
-        return;
+        changed = true;
+    } else {
+        for (std::uint32_t i = 0; i < cur; ++i) {
+            RE::GFxValue v;
+            v.SetNumber(static_cast<double>(src[i]));
+            arr.SetElement(i, v);
+        }
     }
-    for (std::uint32_t i = 0; i < cur; ++i) {
-        RE::GFxValue v;
-        v.SetNumber(static_cast<double>(src[i]));
-        arr.SetElement(i, v);
+    const std::uint64_t h = hash_u32(src);
+    if (h != lastHash) {
+        changed = true;
+        lastHash = h;
     }
+    return changed;
 }
 
-void InjectHUD::ERFWidget::ClearAndHide() {
+void InjectHUD::ERFWidget::ClearAndHide(bool isSingle, bool isHorizontal, float spacingPx) {
     if (!_view) return;
 
     EnsureArrays();
@@ -293,13 +368,10 @@ void InjectHUD::ERFWidget::ClearAndHide() {
     _view->CreateArray(&_arrComboTints);
     _view->CreateArray(&_arrAccumVals);
     _view->CreateArray(&_arrAccumCols);
-    _isSingle.SetBoolean(ERF::GetConfig().isSingle.load(std::memory_order_relaxed));
-    const bool isHor = _isPlayerWidget ? ERF::GetConfig().playerHorizontal.load(std::memory_order_relaxed)
-                                       : ERF::GetConfig().npcHorizontal.load(std::memory_order_relaxed);
-    _isHorin.SetBoolean(isHor);
-    const float space = _isPlayerWidget ? ERF::GetConfig().playerSpacing.load(std::memory_order_relaxed)
-                                        : ERF::GetConfig().npcSpacing.load(std::memory_order_relaxed);
-    _spacing = space;
+
+    _isSingle.SetBoolean(isSingle);
+    _isHorin.SetBoolean(isHorizontal);
+    _spacing = spacingPx;
 
     _args[0] = _arrComboRemain;
     _args[1] = _arrComboTints;
@@ -312,30 +384,34 @@ void InjectHUD::ERFWidget::ClearAndHide() {
     RE::GFxValue ret;
     _object.Invoke("setAll", &ret, _args, 7);
 
-    RE::GFxValue vis;
-    vis.SetBoolean(false);
-    _object.SetMember("_visible", vis);
+    if (_lastVisible) {
+        RE::GFxValue vis;
+        vis.SetBoolean(false);
+        _object.SetMember("_visible", vis);
+        _lastVisible = false;
+    }
+    _lastIsSingle = isSingle;
+    _lastIsHor = isHorizontal;
+    _lastSpacing = spacingPx;
 }
 
 void InjectHUD::ERFWidget::SetAll(const std::vector<double>& comboRemain01,
                                   const std::vector<std::uint32_t>& comboTintsRGB,
                                   const std::vector<double>& accumValues,
-                                  const std::vector<std::uint32_t>& accumColorsRGB) {
+                                  const std::vector<std::uint32_t>& accumColorsRGB, bool isSingle, bool isHorizontal,
+                                  float spacingPx) {
     if (!_view) return;
 
     EnsureArrays();
 
-    FillArrayDoubles(_arrComboRemain, comboRemain01);
-    FillArrayU32AsNumber(_arrComboTints, comboTintsRGB);
-    FillArrayDoubles(_arrAccumVals, accumValues);
-    FillArrayU32AsNumber(_arrAccumCols, accumColorsRGB);
-    _isSingle.SetBoolean(ERF::GetConfig().isSingle.load(std::memory_order_relaxed));
-    const bool isHor = _isPlayerWidget ? ERF::GetConfig().playerHorizontal.load(std::memory_order_relaxed)
-                                       : ERF::GetConfig().npcHorizontal.load(std::memory_order_relaxed);
-    _isHorin.SetBoolean(isHor);
-    const float space = _isPlayerWidget ? ERF::GetConfig().playerSpacing.load(std::memory_order_relaxed)
-                                        : ERF::GetConfig().npcSpacing.load(std::memory_order_relaxed);
-    _spacing = space;
+    const bool chComboR = FillArrayDoubles(_arrComboRemain, comboRemain01, _hComboRemain);
+    const bool chComboT = FillArrayU32AsNumber(_arrComboTints, comboTintsRGB, _hComboTints);
+    const bool chAccumV = FillArrayDoubles(_arrAccumVals, accumValues, _hAccumVals);
+    const bool chAccumC = FillArrayU32AsNumber(_arrAccumCols, accumColorsRGB, _hAccumCols);
+
+    _isSingle.SetBoolean(isSingle);
+    _isHorin.SetBoolean(isHorizontal);
+    _spacing = spacingPx;
 
     _args[0] = _arrComboRemain;
     _args[1] = _arrComboTints;
@@ -345,12 +421,25 @@ void InjectHUD::ERFWidget::SetAll(const std::vector<double>& comboRemain01,
     _args[5] = _isHorin;
     _args[6] = _spacing;
 
-    RE::GFxValue ret;
-    const bool ok = _object.Invoke("setAll", &ret, _args, 7);
+    bool flagsChanged = (_lastIsSingle != isSingle || _lastIsHor != isHorizontal ||
+                         !(std::isfinite(_lastSpacing) && std::abs(_lastSpacing - spacingPx) < 1e-6));
+    const bool needInvoke = flagsChanged || chComboR || chComboT || chAccumV || chAccumC;
 
-    RE::GFxValue vis;
-    vis.SetBoolean(ok);
-    _object.SetMember("_visible", vis);
+    RE::GFxValue ret;
+    bool ok = true;
+    if (needInvoke) {
+        ok = _object.Invoke("setAll", &ret, _args, 7);
+        _lastIsSingle = isSingle;
+        _lastIsHor = isHorizontal;
+        _lastSpacing = spacingPx;
+    }
+
+    if (_lastVisible != ok) {
+        RE::GFxValue vis;
+        vis.SetBoolean(ok);
+        _object.SetMember("_visible", vis);
+        _lastVisible = ok;
+    }
 }
 
 void InjectHUD::AddFor(RE::Actor* actor) {
@@ -394,9 +483,12 @@ void InjectHUD::UpdateFor(RE::Actor* actor, double nowRt, float nowH) {
 
     if (const int needed = static_cast<int>(actives.size()) + (haveTotals ? 1 : 0); needed == 0) {
         if (w._view) {
-            RE::GFxValue vis;
-            vis.SetBoolean(false);
-            w._object.SetMember("_visible", vis);
+            if (w._lastVisible) {
+                RE::GFxValue vis;
+                vis.SetBoolean(false);
+                w._object.SetMember("_visible", vis);
+                w._lastVisible = false;
+            }
         }
         return;
     }
@@ -430,7 +522,10 @@ void InjectHUD::UpdateFor(RE::Actor* actor, double nowRt, float nowH) {
     }
 
     w.FollowActorHead(actor);
-    w.SetAll(comboRemain01, comboTintsRGB, accumValues, accumColorsRGB);
+    const bool isSingle = g_snap.isSingle;
+    const bool isHor = w._isPlayerWidget ? g_snap.playerHorizontal : g_snap.npcHorizontal;
+    const float space = w._isPlayerWidget ? g_snap.playerSpacing : g_snap.npcSpacing;
+    w.SetAll(comboRemain01, comboTintsRGB, accumValues, accumColorsRGB, isSingle, isHor, space);
 }
 
 void InjectHUD::BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float seconds, bool realTime) {
@@ -448,7 +543,9 @@ void InjectHUD::BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float sec
     std::scoped_lock lk(g_comboMx);
     g_comboQueue.push_back(std::move(pr));
 
-    HUD::StartHUDTick();
+    if (ERF::GetConfig().hudEnabled.load(std::memory_order_relaxed)) {
+        HUD::StartHUDTick();
+    }
 }
 
 bool InjectHUD::HideFor(RE::FormID id) {
@@ -458,7 +555,10 @@ bool InjectHUD::HideFor(RE::FormID id) {
     auto& w = *it->second.widget;
     if (!w._view) return false;
 
-    w.ClearAndHide();
+    const bool isSingle = g_snap.isSingle;
+    const bool isHor = w._isPlayerWidget ? g_snap.playerHorizontal : g_snap.npcHorizontal;
+    const float space = w._isPlayerWidget ? g_snap.playerSpacing : g_snap.npcSpacing;
+    w.ClearAndHide(isSingle, isHor, space);
     return true;
 }
 
@@ -497,7 +597,24 @@ void InjectHUD::OnTrueHUDClose() {
     HUD::ResetTracking();
 }
 
-void InjectHUD::OnUIFrameBegin(double nowRtS, float nowH) { DrainComboQueueOnUI(nowRtS, nowH); }
+void InjectHUD::OnUIFrameBegin(double nowRtS, float nowH) {
+    const auto& cfg = ERF::GetConfig();
+    g_snap.hudEnabled = cfg.hudEnabled.load(std::memory_order_relaxed);
+    g_snap.isSingle = cfg.isSingle.load(std::memory_order_relaxed);
+    g_snap.playerHorizontal = cfg.playerHorizontal.load(std::memory_order_relaxed);
+    g_snap.npcHorizontal = cfg.npcHorizontal.load(std::memory_order_relaxed);
+    g_snap.playerSpacing = cfg.playerSpacing.load(std::memory_order_relaxed);
+    g_snap.npcSpacing = cfg.npcSpacing.load(std::memory_order_relaxed);
+    g_snap.playerX = cfg.playerXPosition.load(std::memory_order_relaxed);
+    g_snap.playerY = cfg.playerYPosition.load(std::memory_order_relaxed);
+    g_snap.playerScale = cfg.playerScale.load(std::memory_order_relaxed);
+    g_snap.npcX = cfg.npcXPosition.load(std::memory_order_relaxed);
+    g_snap.npcY = cfg.npcYPosition.load(std::memory_order_relaxed);
+    g_snap.npcScale = cfg.npcScale.load(std::memory_order_relaxed);
+    g_snap.nowRtS = nowRtS;
+    g_snap.nowH = nowH;
+    DrainComboQueueOnUI(nowRtS, nowH);
+}
 
 bool InjectHUD::IsOnScreen(RE::Actor* actor, float worldOffsetZ) noexcept {
     if (!actor || !g_viewPort || !g_worldToCamMatrix) return false;
