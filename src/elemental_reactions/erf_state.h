@@ -1,4 +1,6 @@
 #pragma once
+#include <ankerl/unordered_dense.h>
+
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -33,6 +35,6 @@ private:
     StateRegistry() = default;
     std::vector<ERF_StateDesc> _states;
     bool _frozen = false;
-    std::unordered_map<std::string_view, ERF_StateHandle> _nameIndex;
-    std::unordered_map<RE::FormID, ERF_StateHandle> _kwIndex;
+    ankerl::unordered_dense::map<std::string_view, ERF_StateHandle> _nameIndex;
+    ankerl::unordered_dense::map<RE::FormID, ERF_StateHandle> _kwIndex;
 };

@@ -2,5 +2,11 @@
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "elemental-reactions-framework",
   "version-string": "0.0.1",
-  "dependencies": ["commonlibsse-ng", "simpleini", "nlohmann-json"]
+  "dependencies": [
+    "commonlibsse-ng",
+    "simpleini",
+    "nlohmann-json",
+    "unordered-dense"
+  ],
+  "builtin-baseline": "b94ab47c998b93fe72b0f501eaac70f96328019e"
 }

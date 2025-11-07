@@ -137,7 +137,7 @@ static void RegisterEverything_Core() {
         p.cb = &ApplyShockSlow;
         p.user = nullptr;
 
-        auto ph = api->RegisterPreEffect(p);
+        api->RegisterPreEffect(p);
     }
 
     // 5) Reação simples: Solo Fire 85% (callback de log)
@@ -163,7 +163,7 @@ static void RegisterEverything_Core() {
         r.cb = &OnReaction;
         r.user = nullptr;
 
-        auto rh = api->RegisterReaction(r);
+        api->RegisterReaction(r);
     }
 }
 
@@ -183,8 +183,8 @@ static void RegisterEverything_WithWindow() {
     if (!usedBarrier) {
         // Se a janela já fechou, registrar agora vai falhar (provider recusa pós-freeze).
         // Tente pelo menos logar o estado pra diagnosticar.
-        const int open = api->IsRegistrationOpen ? (api->IsRegistrationOpen() ? 1 : 0) : -1;
-        const int froz = api->IsFrozen ? (api->IsFrozen() ? 1 : 0) : -1;
+        api->IsRegistrationOpen ? (api->IsRegistrationOpen() ? 1 : 0) : -1;
+        api->IsFrozen ? (api->IsFrozen() ? 1 : 0) : -1;
     }
 
     RegisterEverything_Core();
