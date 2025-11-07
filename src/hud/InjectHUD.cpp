@@ -28,6 +28,23 @@ namespace {
 
     static thread_local HUDFrameSnapshot g_snap{};
 
+    constexpr std::size_t kHUD_TLS_CAP = 12;
+    struct HUDTLS {
+        std::vector<double> comboRemain01;
+        std::vector<std::uint32_t> comboTintsRGB;
+        std::vector<double> accumValues;
+        std::vector<std::uint32_t> accumColorsRGB;
+        std::vector<ActiveReactionHUD> actives;
+        HUDTLS() {
+            comboRemain01.reserve(kHUD_TLS_CAP);
+            comboTintsRGB.reserve(kHUD_TLS_CAP);
+            accumValues.reserve(kHUD_TLS_CAP);
+            accumColorsRGB.reserve(kHUD_TLS_CAP);
+            actives.reserve(8);
+        }
+    };
+    thread_local HUDTLS g_hudTLS;
+
     inline float NowHours() { return RE::Calendar::GetSingleton()->GetHoursPassed(); }
 
     void DrainComboQueueOnUI(double nowRt, float nowH) {
@@ -70,16 +87,20 @@ namespace {
         }
     }
 
-    std::vector<ActiveReactionHUD> GetActiveReactions(RE::FormID id, double nowRt, float nowH) {
-        std::vector<ActiveReactionHUD> out;
-        const auto it = combos.find(id);
-        if (it == combos.end()) return out;
+    void GetActiveReactions(RE::FormID id, double nowRt, float nowH, std::vector<ActiveReactionHUD>& out) {
+        out.clear();
 
-        for (const auto& c : it->second) {
-            const bool alive = c.realTime ? (nowRt < c.endRtS) : (nowH < c.endH);
-            if (alive) out.push_back(c);
-        }
-        return out;
+        const auto it = combos.find(id);
+        if (it == combos.end()) return;
+
+        auto& vec = it->second;
+
+        std::erase_if(vec, [nowRt, nowH](const ActiveReactionHUD& c) {
+            return c.realTime ? (nowRt >= c.endRtS) : (nowH >= c.endH);
+        });
+
+        if (out.capacity() < vec.size()) out.reserve(vec.size());
+        out.insert(out.end(), vec.begin(), vec.end());
     }
 
     inline bool IsPlayerActor(RE::Actor* a) { return a && a->IsPlayerRef(); }
@@ -475,49 +496,54 @@ void InjectHUD::UpdateFor(RE::Actor* actor, double nowRt, float nowH) {
 
     auto& w = *it->second.widget;
 
-    const auto actives = GetActiveReactions(id, nowRt, nowH);
+    auto& acts = g_hudTLS.actives;
+    acts.clear();
+    GetActiveReactions(id, nowRt, nowH, acts);
 
     auto bundleOpt = ElementalGauges::PickHudDecayed(id, nowRt, nowH);
     const bool haveTotals =
         bundleOpt && !bundleOpt->values.empty() &&
         std::any_of(bundleOpt->values.begin(), bundleOpt->values.end(), [](std::uint32_t v) { return v > 0; });
 
-    if (const int needed = static_cast<int>(actives.size()) + (haveTotals ? 1 : 0); needed == 0) {
-        if (w._view) {
-            if (w._lastVisible) {
-                RE::GFxValue vis;
-                vis.SetBoolean(false);
-                w._object.SetMember("_visible", vis);
-                w._lastVisible = false;
-            }
+    if (const int needed = static_cast<int>(acts.size()) + (haveTotals ? 1 : 0); needed == 0) {
+        if (w._view && w._lastVisible) {
+            RE::GFxValue vis;
+            vis.SetBoolean(false);
+            w._object.SetMember("_visible", vis);
+            w._lastVisible = false;
         }
         return;
     }
 
     const auto h = actor->GetHandle();
 
-    std::vector<double> comboRemain01;
-    std::vector<std::uint32_t> comboTintsRGB;
+    auto& comboRemain01 = g_hudTLS.comboRemain01;
+    auto& comboTintsRGB = g_hudTLS.comboTintsRGB;
+    comboRemain01.clear();
+    comboTintsRGB.clear();
 
-    comboRemain01.reserve(comboRemain01.capacity());
-    comboTintsRGB.reserve(comboRemain01.capacity());
+    const std::size_t n = std::min<std::size_t>(acts.size(), 3);
+    for (std::size_t i = 0; i < n; ++i) {
+        const auto& r = acts[i];
 
-    for (std::size_t i = 0; i < actives.size() && i < 3; ++i) {
-        const auto& r = actives[i];
-        const double remain = r.realTime ? (r.endRtS - nowRt) : (double(r.endH - nowH) * 3600.0);
-        const double denom = std::max(0.001, (double)r.durationS);
-        const double frac = std::clamp(remain / denom, 0.0, 1.0);
+        const double remainS = r.realTime ? (r.endRtS - nowRt) : (static_cast<double>(r.endH - nowH) * 3600.0);
+
+        const double denom = std::max(0.001, static_cast<double>(r.durationS));
+        const double frac = std::clamp(remainS / denom, 0.0, 1.0);
 
         comboRemain01.push_back(frac);
         comboTintsRGB.push_back(r.tint);
     }
 
-    std::vector<double> accumValues;
-    std::vector<std::uint32_t> accumColorsRGB;
+    auto& accumValues = g_hudTLS.accumValues;
+    auto& accumColorsRGB = g_hudTLS.accumColorsRGB;
+    accumValues.clear();
+    accumColorsRGB.clear();
 
     if (haveTotals) {
         const auto& b = *bundleOpt;
-        accumValues.reserve(b.values.size());
+        if (accumValues.capacity() < b.values.size()) accumValues.reserve(b.values.size());
+        if (accumColorsRGB.capacity() < b.colors.size()) accumColorsRGB.reserve(b.colors.size());
         for (auto v : b.values) accumValues.push_back(double(std::clamp<std::uint32_t>(v, 0, 100)));
         accumColorsRGB.assign(b.colors.begin(), b.colors.end());
     }
