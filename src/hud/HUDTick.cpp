@@ -59,7 +59,8 @@ namespace {
             if (!a) {
                 a = RE::TESForm::LookupByID<RE::Actor>(id);
                 if (a) {
-                    auto& entry = InjectHUD::widgets[id];
+                    auto [__itW, __insertedW] = InjectHUD::widgets.try_emplace(id);
+                    auto& entry = __itW->second;
                     entry.handle = a->CreateRefHandle();
                 }
             }

@@ -73,7 +73,8 @@ void ReactionRegistry::buildIndex_() const {
         _minPctEachByH[h] = r.minPctEach;
         _minSumSelByH[h] = r.minSumSelected;
 
-        auto& bucket = _byMask[m];
+        auto [__itB, __insertedB] = _byMask.try_emplace(m);
+        auto& bucket = __itB->second;
         if (bucket.empty()) bucket.reserve(4);
         bucket.push_back(h);
     }
