@@ -101,7 +101,19 @@ namespace Gauges {
         e.sumAll = 0;
     }
 
-    inline void tickOne(Entry& e, std::size_t i, float nowH) {
+    struct DecaySnapshot {
+        float ratePerHour;
+        float graceHours;
+    };
+
+    inline DecaySnapshot SnapshotDecay() {
+        const float ts = Timescale();
+        DecaySnapshot s{/*ratePerHour=*/kRealDecayPerSec * 3600.0f / ts,
+                        /*graceHours=*/(kGraceSec * ts) / 3600.0f};
+        return s;
+    }
+
+    inline void tickOne(Entry& e, std::size_t i, float nowH, const DecaySnapshot& snap) {
         auto& val = e.v[i];
         auto& eval = e.lastEvalH[i];
         const float hit = e.lastHitH[i];
@@ -111,13 +123,13 @@ namespace Gauges {
             return;
         }
 
-        const float rate = DecayPerGameHour();
+        const float rate = snap.ratePerHour;
         if (rate <= 0.f) {
             eval = nowH;
             return;
         }
 
-        const float graceEnd = hit + GraceGameHours();
+        const float graceEnd = hit + snap.graceHours;
         if (nowH <= graceEnd) return;
 
         const float startH = std::max(eval, graceEnd);
@@ -136,10 +148,10 @@ namespace Gauges {
         eval = nowH - (rem / rate);
     }
 
-    inline void tickAll(Entry& e, float nowH) {
+    inline void tickAll(Entry& e, float nowH, const DecaySnapshot& snap) {
         const auto n = e.v.size();
         for (std::size_t i = firstIndex(); i < n; ++i) {
-            tickOne(e, i, nowH);
+            tickOne(e, i, nowH, snap);
         }
     }
 
@@ -677,7 +689,8 @@ void ElementalGauges::Add(RE::Actor* a, ERF_ElementHandle elem, int delta) {
     const float nowH = NowHours();
     const double nowRt = NowRealSeconds();
 
-    Gauges::tickAll(e, nowH);
+    const auto snap = Gauges::SnapshotDecay();
+    Gauges::tickAll(e, nowH, snap);
 
     if (const int sumNow = SumAll(e); sumNow != e.sumAll) {
         Gauges::rebuildPresence(e);
@@ -729,7 +742,8 @@ std::uint8_t ElementalGauges::Get(RE::Actor* a, ERF_ElementHandle elem) {
     if (!e.sized) Gauges::initEntryDenseIfNeeded(e);
 
     const auto i = Gauges::idx(elem);
-    Gauges::tickOne(e, i, NowHours());
+    const auto snap = Gauges::SnapshotDecay();
+    Gauges::tickOne(e, i, NowHours(), snap);
     return e.v[i];
 }
 
@@ -744,7 +758,8 @@ void ElementalGauges::Set(RE::Actor* a, ERF_ElementHandle elem, std::uint8_t val
 
     const int before0 = static_cast<int>(e.v[i]);
 
-    Gauges::tickOne(e, i, nowH);
+    const auto snap = Gauges::SnapshotDecay();
+    Gauges::tickOne(e, i, nowH, snap);
 
     const auto afterDecay = static_cast<int>(e.v[i]);
     if (afterDecay != before0) {
@@ -775,7 +790,8 @@ void ElementalGauges::ForEachDecayed(const std::function<void(RE::FormID, Totals
     for (auto it = m.begin(); it != m.end();) {
         auto& e = it->second;
 
-        Gauges::tickAll(e, nowH);
+        const auto snap = Gauges::SnapshotDecay();
+        Gauges::tickAll(e, nowH, snap);
 
         const std::size_t beginE = Gauges::firstIndex();
         const std::size_t nE = e.v.size();
@@ -847,7 +863,8 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
 
     auto& e = it->second;
 
-    Gauges::tickAll(e, nowH);
+    const auto snap = Gauges::SnapshotDecay();
+    Gauges::tickAll(e, nowH, snap);
 
     HudGaugeBundle bundle{};
 
