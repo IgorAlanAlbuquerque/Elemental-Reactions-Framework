@@ -688,7 +688,8 @@ namespace {
 
             Gauges::rebuildPresence(e);
 
-            m[newID] = std::move(e);
+            auto [it, ins] = m.try_emplace(newID, std::move(e));
+            if (!ins) it->second = std::move(e);
         }
         return true;
     }
