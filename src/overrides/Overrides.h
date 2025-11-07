@@ -26,7 +26,6 @@ namespace ERF::Overrides {
     bool InitResources();
 
     void SetGaugeEffect(RE::EffectSetting* mgef);
-    void SetERFKeywords(std::unordered_set<RE::BGSKeyword*> kws);
 
     bool HasERFKeyword(const RE::EffectSetting* mgef);
     RE::Effect* FindGaugeEffect(RE::SpellItem* sp);
@@ -41,4 +40,5 @@ namespace ERF::Overrides {
     std::string FormIDHex(std::uint32_t id);
     std::string_view OwningPlugin(const RE::TESForm* f);
     std::uint32_t RawFormID(const RE::TESForm* f);
+    std::size_t ApplyOverridesFromJSON();
 }

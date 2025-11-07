@@ -7,7 +7,7 @@
 
 namespace ElementalGaugesHook {
     extern std::atomic_bool ALLOW_HUD_TICK;
-    static RE::EffectSetting* g_mgefGaugeAcc = nullptr;
+    extern RE::EffectSetting* g_mgefGaugeAcc;
     void StartHUDTick();
     void StopHUDTick();
     void Install();

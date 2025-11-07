@@ -81,6 +81,7 @@ namespace {
                 ERF::GetConfig().Load();
                 ERF_UI::Register();
                 ERF::Overrides::SetGaugeEffect(ElementalGaugesHook::g_mgefGaugeAcc);
+                ERF::Overrides::ApplyOverridesFromJSON();
                 break;
             }
 
