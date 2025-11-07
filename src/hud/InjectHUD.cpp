@@ -122,6 +122,35 @@ namespace {
             w._lastVisible = true;
         }
     }
+
+    static inline std::uint64_t fnv1a64_init() { return 1469598103934665603ull; }
+    static inline std::uint64_t fnv1a64_mix(std::uint64_t h, std::uint8_t b) {
+        h ^= b;
+        return h * 1099511628211ull;
+    }
+    template <class It>
+    static std::uint64_t hash_bytes(It first, It last) {
+        auto h = fnv1a64_init();
+        for (; first != last; ++first) h = fnv1a64_mix(h, static_cast<std::uint8_t>(*first));
+        return h;
+    }
+    static std::uint64_t hash_doubles_q(const std::vector<double>& v) {
+        auto h = fnv1a64_init();
+        for (double d : v) {
+            long long q = llround(d * 1000.0);
+            const std::uint8_t* p = reinterpret_cast<const std::uint8_t*>(&q);
+            for (std::size_t i = 0; i < sizeof(q); ++i) h = fnv1a64_mix(h, p[i]);
+        }
+        return h;
+    }
+    static std::uint64_t hash_u32(const std::vector<std::uint32_t>& v) {
+        auto h = fnv1a64_init();
+        for (std::uint32_t x : v) {
+            const std::uint8_t* p = reinterpret_cast<const std::uint8_t*>(&x);
+            for (std::size_t i = 0; i < sizeof(x); ++i) h = fnv1a64_mix(h, p[i]);
+        }
+        return h;
+    }
 }
 
 void InjectHUD::ERFWidget::Initialize() {
@@ -273,40 +302,61 @@ void InjectHUD::ERFWidget::EnsureArrays() {
     _arraysInit = true;
 }
 
-void InjectHUD::ERFWidget::FillArrayDoubles(RE::GFxValue& arr, const std::vector<double>& src) {
+bool InjectHUD::ERFWidget::FillArrayDoubles(RE::GFxValue& arr, const std::vector<double>& src,
+                                            std::uint64_t& lastHash) {
+    bool changed = false;
     const std::uint32_t cur = arr.GetArraySize();
-    if (cur != src.size()) {
+    const std::uint32_t want = static_cast<std::uint32_t>(src.size());
+    if (cur != want) {
         _view->CreateArray(&arr);
         for (double d : src) {
             RE::GFxValue v;
             v.SetNumber(d);
             arr.PushBack(v);
         }
-        return;
+        changed = true;
+    } else {
+        for (std::uint32_t i = 0; i < cur; ++i) {
+            RE::GFxValue v;
+            v.SetNumber(src[i]);
+            arr.SetElement(i, v);
+        }
     }
-    for (std::uint32_t i = 0; i < cur; ++i) {
-        RE::GFxValue v;
-        v.SetNumber(src[i]);
-        arr.SetElement(i, v);
+
+    const std::uint64_t h = hash_doubles_q(src);
+    if (h != lastHash) {
+        changed = true;
+        lastHash = h;
     }
+    return changed;
 }
 
-void InjectHUD::ERFWidget::FillArrayU32AsNumber(RE::GFxValue& arr, const std::vector<std::uint32_t>& src) {
+bool InjectHUD::ERFWidget::FillArrayU32AsNumber(RE::GFxValue& arr, const std::vector<std::uint32_t>& src,
+                                                std::uint64_t& lastHash) {
+    bool changed = false;
     const std::uint32_t cur = arr.GetArraySize();
-    if (cur != src.size()) {
+    const std::uint32_t want = static_cast<std::uint32_t>(src.size());
+    if (cur != want) {
         _view->CreateArray(&arr);
         for (std::uint32_t u : src) {
             RE::GFxValue v;
             v.SetNumber(static_cast<double>(u));
             arr.PushBack(v);
         }
-        return;
+        changed = true;
+    } else {
+        for (std::uint32_t i = 0; i < cur; ++i) {
+            RE::GFxValue v;
+            v.SetNumber(static_cast<double>(src[i]));
+            arr.SetElement(i, v);
+        }
     }
-    for (std::uint32_t i = 0; i < cur; ++i) {
-        RE::GFxValue v;
-        v.SetNumber(static_cast<double>(src[i]));
-        arr.SetElement(i, v);
+    const std::uint64_t h = hash_u32(src);
+    if (h != lastHash) {
+        changed = true;
+        lastHash = h;
     }
+    return changed;
 }
 
 void InjectHUD::ERFWidget::ClearAndHide(bool isSingle, bool isHorizontal, float spacingPx) {
@@ -354,10 +404,10 @@ void InjectHUD::ERFWidget::SetAll(const std::vector<double>& comboRemain01,
 
     EnsureArrays();
 
-    FillArrayDoubles(_arrComboRemain, comboRemain01);
-    FillArrayU32AsNumber(_arrComboTints, comboTintsRGB);
-    FillArrayDoubles(_arrAccumVals, accumValues);
-    FillArrayU32AsNumber(_arrAccumCols, accumColorsRGB);
+    const bool chComboR = FillArrayDoubles(_arrComboRemain, comboRemain01, _hComboRemain);
+    const bool chComboT = FillArrayU32AsNumber(_arrComboTints, comboTintsRGB, _hComboTints);
+    const bool chAccumV = FillArrayDoubles(_arrAccumVals, accumValues, _hAccumVals);
+    const bool chAccumC = FillArrayU32AsNumber(_arrAccumCols, accumColorsRGB, _hAccumCols);
 
     _isSingle.SetBoolean(isSingle);
     _isHorin.SetBoolean(isHorizontal);
@@ -371,12 +421,9 @@ void InjectHUD::ERFWidget::SetAll(const std::vector<double>& comboRemain01,
     _args[5] = _isHorin;
     _args[6] = _spacing;
 
-    bool needInvoke =
-        (_lastIsSingle != isSingle || _lastIsHor != isHorizontal ||
-         !(std::isfinite(_lastSpacing) && std::abs(_lastSpacing - spacingPx) < 1e-6) ||
-         _arrComboRemain.GetArraySize() != comboRemain01.size() || _arrAccumVals.GetArraySize() != accumValues.size() ||
-         _arrComboTints.GetArraySize() != comboTintsRGB.size() ||
-         _arrAccumCols.GetArraySize() != accumColorsRGB.size());
+    bool flagsChanged = (_lastIsSingle != isSingle || _lastIsHor != isHorizontal ||
+                         !(std::isfinite(_lastSpacing) && std::abs(_lastSpacing - spacingPx) < 1e-6));
+    const bool needInvoke = flagsChanged || chComboR || chComboT || chAccumV || chAccumC;
 
     RE::GFxValue ret;
     bool ok = true;

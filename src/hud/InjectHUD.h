@@ -115,6 +115,11 @@ namespace InjectHUD {
         RE::GFxValue _isHorin;
         RE::GFxValue _spacing;
 
+        std::uint64_t _hComboRemain{0};
+        std::uint64_t _hComboTints{0};
+        std::uint64_t _hAccumVals{0};
+        std::uint64_t _hAccumCols{0};
+
         bool _lastIsSingle{true};
         bool _lastIsHor{true};
         float _lastSpacing{std::numeric_limits<float>::quiet_NaN()};
@@ -122,8 +127,8 @@ namespace InjectHUD {
         RE::GFxValue _args[7];
 
         void EnsureArrays();
-        void FillArrayDoubles(RE::GFxValue& arr, const std::vector<double>& src);
-        void FillArrayU32AsNumber(RE::GFxValue& arr, const std::vector<std::uint32_t>& src);
+        bool FillArrayDoubles(RE::GFxValue& arr, const std::vector<double>& src, std::uint64_t& lastHash);
+        bool FillArrayU32AsNumber(RE::GFxValue& arr, const std::vector<std::uint32_t>& src, std::uint64_t& lastHash);
     };
 
     void AddFor(RE::Actor* actor);
