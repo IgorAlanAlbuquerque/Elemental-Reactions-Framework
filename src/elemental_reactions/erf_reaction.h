@@ -1,8 +1,9 @@
 #pragma once
 
+#include <ankerl/unordered_dense.h>
+
 #include <cstdint>
 #include <optional>
-#include <unordered_map>
 #include <vector>
 
 #include "RE/Skyrim.h"
@@ -58,7 +59,7 @@ private:
     mutable std::vector<std::uint32_t> _minTotalByH;
     mutable std::vector<float> _minPctEachByH;
     mutable std::vector<float> _minSumSelByH;
-    mutable std::unordered_map<Mask, std::vector<ERF_ReactionHandle>> _byMask;
+    mutable ankerl::unordered_dense::map<Mask, std::vector<ERF_ReactionHandle>> _byMask;
 
     void buildIndex_() const;
     static Mask makeMask_(const std::vector<ERF_ElementHandle>& elems);

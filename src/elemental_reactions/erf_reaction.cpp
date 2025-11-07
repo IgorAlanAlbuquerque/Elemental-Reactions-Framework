@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cassert>
 #include <numeric>
-#include <unordered_set>
 
 #include "../common/Helpers.h"
 
@@ -62,7 +61,7 @@ void ReactionRegistry::buildIndex_() const {
     _minSumSelByH.resize(N, 0.0f);
 
     _byMask.clear();
-    _byMask.reserve(N);
+    _byMask.reserve(N * 2);
 
     for (ERF_ReactionHandle h = 1; h < N; ++h) {
         const auto& r = _reactions[h];
@@ -74,7 +73,9 @@ void ReactionRegistry::buildIndex_() const {
         _minPctEachByH[h] = r.minPctEach;
         _minSumSelByH[h] = r.minSumSelected;
 
-        _byMask[m].push_back(h);
+        auto& bucket = _byMask[m];
+        if (bucket.empty()) bucket.reserve(4);
+        bucket.push_back(h);
     }
 
     _indexed = true;

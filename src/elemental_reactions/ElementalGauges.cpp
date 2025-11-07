@@ -1,5 +1,7 @@
 #include "ElementalGauges.h"
 
+#include <ankerl/unordered_dense.h>
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -9,8 +11,6 @@
 #include <optional>
 #include <ranges>
 #include <type_traits>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -58,9 +58,10 @@ namespace Gauges {
         std::vector<std::uint16_t> posInList;
     };
 
-    using Map = std::unordered_map<RE::FormID, Entry>;
+    using Map = ankerl::unordered_dense::map<RE::FormID, Entry>;
     inline Map& state() noexcept {
         static Map m;  // NOSONAR: estado centralizado
+        if (m.bucket_count() == 0) m.reserve(512);
         return m;
     }
 
@@ -865,8 +866,7 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
 
     auto& e = it->second;
 
-    static thread_local Gauges::DecaySnapshot snap;
-    snap = Gauges::SnapshotDecay();
+    const auto snap = Gauges::SnapshotDecay();
     Gauges::tickAll(e, nowH, snap);
 
     HudGaugeBundle bundle{};
