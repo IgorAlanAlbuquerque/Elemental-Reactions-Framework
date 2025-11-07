@@ -55,6 +55,7 @@ namespace Gauges {
         std::uint64_t presentMask = 0;
         std::vector<ERF_ElementHandle> presentList;
         int sumAll = 0;
+        std::vector<std::uint16_t> posInList;
     };
 
     using Map = std::unordered_map<RE::FormID, Entry>;
@@ -99,6 +100,7 @@ namespace Gauges {
         e.presentMask = 0;
         e.presentList.clear();
         e.sumAll = 0;
+        e.posInList.assign(nE, 0xFFFF);
     }
 
     struct DecaySnapshot {
@@ -108,9 +110,51 @@ namespace Gauges {
 
     inline DecaySnapshot SnapshotDecay() {
         const float ts = Timescale();
-        DecaySnapshot s{/*ratePerHour=*/kRealDecayPerSec * 3600.0f / ts,
-                        /*graceHours=*/(kGraceSec * ts) / 3600.0f};
+        DecaySnapshot s{kRealDecayPerSec * 3600.0f / ts, (kGraceSec * ts) / 3600.0f};
         return s;
+    }
+
+    inline ERF_ElementHandle handleFromIndex(std::size_t idx) { return static_cast<ERF_ElementHandle>(idx); }
+
+    inline void makePresent(Entry& e, std::size_t i) {
+        if (i < firstIndex()) return;
+        if (i >= e.posInList.size()) return;
+        if (e.posInList[i] != 0xFFFF) return;
+        const ERF_ElementHandle h = handleFromIndex(i);
+        const auto bit = static_cast<unsigned>(h - 1);
+        if (bit < 64) e.presentMask |= (UINT64_C(1) << bit);
+        e.posInList[i] = static_cast<std::uint16_t>(e.presentList.size());
+        e.presentList.push_back(h);
+    }
+    inline void dropPresent(Entry& e, std::size_t i) {
+        if (i < firstIndex()) return;
+        if (i >= e.posInList.size()) return;
+        auto pos = e.posInList[i];
+        if (pos == 0xFFFF) return;
+        const auto lastIdx = static_cast<std::uint16_t>(e.presentList.size() - 1);
+        const ERF_ElementHandle h = handleFromIndex(i);
+        const auto bit = static_cast<unsigned>(h - 1);
+        if (bit < 64) e.presentMask &= ~(UINT64_C(1) << bit);
+        if (pos != lastIdx) {
+            const ERF_ElementHandle lastH = e.presentList[lastIdx];
+            e.presentList[pos] = lastH;
+            const std::size_t lastI = idx(lastH);
+            if (lastI < e.posInList.size()) e.posInList[lastI] = pos;
+        }
+        e.presentList.pop_back();
+        e.posInList[i] = 0xFFFF;
+    }
+    inline void onValChange(Entry& e, std::size_t i, int before, int after) {
+        if (i < firstIndex()) return;
+        e.sumAll += (after - before);
+        if (e.sumAll < 0) e.sumAll = 0;
+        const bool was = (before > 0);
+        const bool is = (after > 0);
+        if (was == is) return;
+        if (is)
+            makePresent(e, i);
+        else
+            dropPresent(e, i);
     }
 
     inline void tickOne(Entry& e, std::size_t i, float nowH, const DecaySnapshot& snap) {
@@ -140,9 +184,11 @@ namespace Gauges {
         const auto decI = static_cast<int>(decF);
         if (decI <= 0) return;
 
-        int next = static_cast<int>(val) - decI;
+        const int before = static_cast<int>(val);
+        int next = before - decI;
         if (next < 0) next = 0;
         val = static_cast<std::uint8_t>(next);
+        if (next != before) onValChange(e, i, before, next);
 
         const float rem = decF - static_cast<float>(decI);
         eval = nowH - (rem / rate);
@@ -155,47 +201,16 @@ namespace Gauges {
         }
     }
 
-    inline ERF_ElementHandle handleFromIndex(std::size_t idx) { return static_cast<ERF_ElementHandle>(idx); }
-
-    inline void onValChange(Entry& e, std::size_t i, int before, int after) {
-        if (i < firstIndex()) return;
-
-        e.sumAll += (after - before);
-
-        const ERF_ElementHandle h = handleFromIndex(i);
-        const auto bit = static_cast<unsigned>(h - 1);
-        const bool was = (before > 0);
-        const bool is = (after > 0);
-
-        if (was == is) return;
-
-        if (is) {
-            if (bit < 64) e.presentMask |= (UINT64_C(1) << bit);
-            e.presentList.push_back(h);
-        } else {
-            if (bit < 64) e.presentMask &= ~(UINT64_C(1) << bit);
-            for (std::size_t k = 0; k < e.presentList.size(); ++k) {
-                if (e.presentList[k] == h) {
-                    e.presentList[k] = e.presentList.back();
-                    e.presentList.pop_back();
-                    break;
-                }
-            }
-        }
-    }
-
     inline void rebuildPresence(Entry& e) {
         e.presentMask = 0;
         e.presentList.clear();
         e.sumAll = 0;
+        e.posInList.assign(e.v.size(), 0xFFFF);
         for (std::size_t i = firstIndex(); i < e.v.size(); ++i) {
             const int v = e.v[i];
             if (v > 0) {
-                const ERF_ElementHandle h = handleFromIndex(i);
-
-                if (const auto bit = static_cast<unsigned>(h - 1); bit < 64) e.presentMask |= (UINT64_C(1) << bit);
-                e.presentList.push_back(h);
                 e.sumAll += v;
+                makePresent(e, i);
             }
         }
     }
@@ -281,6 +296,7 @@ namespace {
                 e.presentMask = 0;
                 e.presentList.clear();
                 e.sumAll = 0;
+                e.posInList.assign(e.v.size(), 0xFFFF);
             }
 
             ApplyElementLocksForReaction(e, r->elements, nowH, r->elementLockoutSeconds, r->elementLockoutIsRealTime);
@@ -341,7 +357,7 @@ namespace {
             e.v[idx] = 0;
             e.lastHitH[idx] = nowH;
             e.lastEvalH[idx] = nowH;
-            Gauges::rebuildPresence(e);
+            Gauges::onValChange(e, idx, static_cast<int>(v), 0);
         }
 
         ApplyElementLocksForReaction(e, r->elements, nowH, r->elementLockoutSeconds, r->elementLockoutIsRealTime);
@@ -692,10 +708,6 @@ void ElementalGauges::Add(RE::Actor* a, ERF_ElementHandle elem, int delta) {
     const auto snap = Gauges::SnapshotDecay();
     Gauges::tickAll(e, nowH, snap);
 
-    if (const int sumNow = SumAll(e); sumNow != e.sumAll) {
-        Gauges::rebuildPresence(e);
-    }
-
     if (nowH < e.blockUntilH[i] || nowRt < e.blockUntilRtS[i]) {
         return;
     }
@@ -756,15 +768,10 @@ void ElementalGauges::Set(RE::Actor* a, ERF_ElementHandle elem, std::uint8_t val
     const std::size_t i = Gauges::idx(elem);
     const float nowH = NowHours();
 
-    const int before0 = static_cast<int>(e.v[i]);
-
     const auto snap = Gauges::SnapshotDecay();
-    Gauges::tickOne(e, i, nowH, snap);
+    Gauges::tickAll(e, nowH, snap);
 
     const auto afterDecay = static_cast<int>(e.v[i]);
-    if (afterDecay != before0) {
-        Gauges::onValChange(e, i, before0, afterDecay);
-    }
 
     if (const auto afterSet = static_cast<int>(clamp100(value)); afterSet != afterDecay) {
         e.v[i] = static_cast<std::uint8_t>(afterSet);
@@ -773,6 +780,7 @@ void ElementalGauges::Set(RE::Actor* a, ERF_ElementHandle elem, std::uint8_t val
         e.v[i] = static_cast<std::uint8_t>(afterDecay);
     }
 
+    e.lastHitH[i] = nowH;
     e.lastEvalH[i] = nowH;
 }
 
@@ -787,21 +795,15 @@ void ElementalGauges::ForEachDecayed(const std::function<void(RE::FormID, Totals
     const float nowH = NowHours();
     const double nowRt = NowRealSeconds();
 
+    const auto snap = Gauges::SnapshotDecay();
     for (auto it = m.begin(); it != m.end();) {
         auto& e = it->second;
 
-        const auto snap = Gauges::SnapshotDecay();
         Gauges::tickAll(e, nowH, snap);
 
         const std::size_t beginE = Gauges::firstIndex();
         const std::size_t nE = e.v.size();
         const std::size_t countE = (nE > beginE) ? (nE - beginE) : 0;
-
-        int newSum = 0;
-        for (std::size_t i = beginE; i < nE; ++i) newSum += e.v[i];
-        if (newSum != e.sumAll) {
-            Gauges::rebuildPresence(e);
-        }
 
         bool anyElemLock = false;
         for (std::size_t i = beginE; i < nE && !anyElemLock; ++i) {
@@ -863,7 +865,8 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
 
     auto& e = it->second;
 
-    const auto snap = Gauges::SnapshotDecay();
+    static thread_local Gauges::DecaySnapshot snap;
+    snap = Gauges::SnapshotDecay();
     Gauges::tickAll(e, nowH, snap);
 
     HudGaugeBundle bundle{};
@@ -932,10 +935,6 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
             m.erase(it);
         }
         return std::nullopt;
-    }
-
-    if (newSum != e.sumAll) {
-        Gauges::rebuildPresence(e);
     }
 
     return bundle;
