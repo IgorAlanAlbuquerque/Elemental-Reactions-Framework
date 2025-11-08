@@ -622,6 +622,7 @@ void InjectHUD::OnTrueHUDClose() {
     RemoveAllWidgets();
     Utils::HeadCacheClearAll();
     HUD::ResetTracking();
+    HUD::StopHUDTick();
 }
 
 void InjectHUD::OnUIFrameBegin(double nowRtS, float nowH) {

@@ -39,6 +39,12 @@ namespace {
         const float nowH = RE::Calendar::GetSingleton()->GetHoursPassed();
         InjectHUD::OnUIFrameBegin(nowRt, nowH);
 
+        if (auto* pc = RE::PlayerCharacter::GetSingleton(); pc && pc->IsDead()) {
+            InjectHUD::RemoveAllWidgets();
+            HUD::ResetTracking();
+            return;
+        }
+
         const float now = RE::Calendar::GetSingleton()->GetCurrentGameTime() * 3600.0f;
 
         constexpr float ZERO_GRACE_SECONDS = 0.1f;
