@@ -122,8 +122,8 @@ namespace Gauges {
         if (i >= e.posInList.size()) return;
         if (e.posInList[i] != 0xFFFF) return;
         const ERF_ElementHandle h = handleFromIndex(i);
-        const auto bit = static_cast<unsigned>(h - 1);
-        if (bit < 64) e.presentMask |= (UINT64_C(1) << bit);
+
+        if (const auto bit = static_cast<unsigned>(h - 1); bit < 64) e.presentMask |= (UINT64_C(1) << bit);
         e.posInList[i] = static_cast<std::uint16_t>(e.presentList.size());
         e.presentList.push_back(h);
     }
@@ -134,8 +134,8 @@ namespace Gauges {
         if (pos == 0xFFFF) return;
         const auto lastIdx = static_cast<std::uint16_t>(e.presentList.size() - 1);
         const ERF_ElementHandle h = handleFromIndex(i);
-        const auto bit = static_cast<unsigned>(h - 1);
-        if (bit < 64) e.presentMask &= ~(UINT64_C(1) << bit);
+
+        if (const auto bit = static_cast<unsigned>(h - 1); bit < 64) e.presentMask &= ~(UINT64_C(1) << bit);
         if (pos != lastIdx) {
             const ERF_ElementHandle lastH = e.presentList[lastIdx];
             e.presentList[pos] = lastH;
@@ -358,7 +358,7 @@ namespace {
             e.v[idx] = 0;
             e.lastHitH[idx] = nowH;
             e.lastEvalH[idx] = nowH;
-            Gauges::onValChange(e, idx, static_cast<int>(v), 0);
+            Gauges::onValChange(e, idx, v, 0);
         }
 
         ApplyElementLocksForReaction(e, r->elements, nowH, r->elementLockoutSeconds, r->elementLockoutIsRealTime);
