@@ -21,7 +21,7 @@ namespace {
         RE::SpellItem* best = nullptr;
         int bestLO = -1;
 
-        auto getLO = [&](const RE::TESFile* f) -> int {
+        auto getLO = [&](const RE::TESFile* f) {
             if (!f) return -1;
             int i = 0;
             for (auto const* file : dh->files) {
@@ -75,8 +75,8 @@ size_t SpellKeyHash::operator()(const SpellKey& k) const noexcept {
 
 const std::filesystem::path& ERF_GetThisDllDir();
 
-static RE::EffectSetting* s_mgefGauge = nullptr;
-static std::unordered_set<RE::BGSKeyword*> s_erfKeywords;
+static RE::EffectSetting* s_mgefGauge = nullptr;           // NOSONAR
+static std::unordered_set<RE::BGSKeyword*> s_erfKeywords;  // NOSONAR
 
 bool ERF::Overrides::InitResources() { return (s_mgefGauge != nullptr); }
 
@@ -202,8 +202,7 @@ std::string ERF::Overrides::FormIDHex(std::uint32_t id) {
 }
 
 static std::filesystem::path ComputeOverridesPath() {
-    const auto& dllDir = ERF_GetThisDllDir();
-    if (!dllDir.empty()) {
+    if (const auto& dllDir = ERF_GetThisDllDir(); !dllDir.empty()) {
         return dllDir / "ERF" / "spell_overrides.json";
     }
 

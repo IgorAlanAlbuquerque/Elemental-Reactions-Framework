@@ -336,9 +336,8 @@ bool InjectHUD::ERFWidget::FillArrayNames(RE::GFxValue& arr, const std::vector<c
     bool changed = false;
 
     const std::uint32_t cur = arr.GetArraySize();
-    const std::uint32_t want = static_cast<std::uint32_t>(names.size());
 
-    if (cur != want) {
+    if (const auto want = static_cast<std::uint32_t>(names.size()); cur != want) {
         _view->CreateArray(&arr);
         arr.SetArraySize(want);
         for (std::uint32_t i = 0; i < want; ++i) {
@@ -347,7 +346,7 @@ bool InjectHUD::ERFWidget::FillArrayNames(RE::GFxValue& arr, const std::vector<c
                 v.SetString(names[i]);
             else
                 v.SetNull();
-            arr.SetElement(i, &v);
+            arr.SetElement(i, v);
         }
         changed = true;
     } else {
@@ -357,7 +356,7 @@ bool InjectHUD::ERFWidget::FillArrayNames(RE::GFxValue& arr, const std::vector<c
                 v.SetString(names[i]);
             else
                 v.SetNull();
-            arr.SetElement(i, &v);
+            arr.SetElement(i, v);
         }
     }
 
@@ -367,7 +366,7 @@ bool InjectHUD::ERFWidget::FillArrayNames(RE::GFxValue& arr, const std::vector<c
             h = fnv1a64_mix(h, 0);
             continue;
         }
-        for (const unsigned char* p = reinterpret_cast<const unsigned char*>(s); *p; ++p) {
+        for (const auto* p = reinterpret_cast<const unsigned char*>(s); *p; ++p) {
             h = fnv1a64_mix(h, *p);
         }
         h = fnv1a64_mix(h, 0);
@@ -508,6 +507,7 @@ void InjectHUD::ERFWidget::SetAll(const std::vector<double>& comboRemain01,
 
     RE::GFxValue ret;
     bool ok = true;
+
     if (needInvoke) {
         ok = _object.Invoke("setAll", &ret, _args, 8);
         _lastIsSingle = isSingle;

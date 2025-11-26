@@ -179,7 +179,7 @@ struct _SpellRow {
 static void _SaveSpellOverridesJSON(const std::vector<_SpellRow>& rows, float defaultMagnitude) {
     if (!ERF::Overrides::EnsureOverridesFolder()) return;
 
-    const auto path = ERF::Overrides::OverridesPath();
+    const auto& path = ERF::Overrides::OverridesPath();
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out) return;
 
@@ -282,10 +282,10 @@ void __stdcall ERF_UI::DrawEditGauge() {
         toLowerInPlace(form);
         toLowerInPlace(name);
 
-        if (edid.find(f) != std::string::npos) return true;
-        if (plugin.find(f) != std::string::npos) return true;
-        if (form.find(f) != std::string::npos) return true;
-        if (!name.empty() && name.find(f) != std::string::npos) return true;
+        if (edid.contains(f)) return true;
+        if (plugin.contains(f)) return true;
+        if (form.contains(f)) return true;
+        if (!name.empty() && name.contains(f)) return true;
 
         return false;
     };
