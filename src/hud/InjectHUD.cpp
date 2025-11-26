@@ -120,7 +120,6 @@ namespace {
             w._lastX = targetX;
             w._lastY = targetY;
             w._lastScale = 100.0f * InjectHUD::ERFWidget::kPlayerScale * g_snap.playerScale;
-            w._needsSnap = false;
         }
 
         const double px = std::floor(targetX + 0.5);
@@ -129,9 +128,11 @@ namespace {
 
         constexpr double EPS_POS = 0.5;
         constexpr float EPS_SCL = 0.01f;
-        const bool posChanged = (std::fabs(px - w._lastX) > EPS_POS) || (std::fabs(py - w._lastY) > EPS_POS);
+        const bool posChanged =
+            w._needsSnap || (std::fabs(px - w._lastX) > EPS_POS) || (std::fabs(py - w._lastY) > EPS_POS);
 
-        if (const bool sclChanged = (!std::isfinite(w._lastScale)) || (std::fabs(sc - w._lastScale) > EPS_SCL);
+        if (const bool sclChanged =
+                w._needsSnap || (!std::isfinite(w._lastScale)) || (std::fabs(sc - w._lastScale) > EPS_SCL);
             posChanged || sclChanged) {
             RE::GFxValue::DisplayInfo di;
             di.SetPosition(static_cast<float>(px), static_cast<float>(py));
@@ -140,6 +141,7 @@ namespace {
             w._lastX = px;
             w._lastY = py;
             w._lastScale = sc;
+            w._needsSnap = false;
         }
 
         if (!w._lastVisible) {
