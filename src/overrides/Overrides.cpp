@@ -11,6 +11,7 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 
+#include "../common/Helpers.h"
 #include "RE/T/TESForm.h"
 
 namespace {
@@ -182,9 +183,22 @@ std::vector<RE::SpellItem*> ERF::Overrides::ScanAllSpellsWithKeyword() {
     return out;
 }
 
-std::string ERF::Overrides::GetEditorID(const RE::TESForm* f) {
-    if (!f) return {};
-    if (const char* ed = f->GetFormEditorID(); ed && ed[0]) return ed;
+std::string ERF::Overrides::GetEditorID(const RE::TESForm* form) {
+    if (!form) {
+        return {};
+    }
+
+    {
+        std::string fromPo3 = ERF::GetEditorID_po3(form);
+        if (!fromPo3.empty()) {
+            return fromPo3;
+        }
+    }
+
+    if (auto vanilla = form->GetFormEditorID(); vanilla && vanilla[0] != '\0') {
+        return vanilla;
+    }
+
     return {};
 }
 
