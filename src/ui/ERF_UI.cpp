@@ -179,7 +179,7 @@ struct _SpellRow {
 static void _SaveSpellOverridesJSON(const std::vector<_SpellRow>& rows, float defaultMagnitude) {
     if (!ERF::Overrides::EnsureOverridesFolder()) return;
 
-    const auto path = ERF::Overrides::OverridesPath();
+    const auto& path = ERF::Overrides::OverridesPath();
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out) return;
 
@@ -253,7 +253,7 @@ void __stdcall ERF_UI::DrawEditGauge() {
             r.formHex = ERF::Overrides::FormIDHex(ERF::Overrides::RawFormID(sp));
             r.name = ERF::Overrides::GetDisplayName(sp);
 
-            if (auto* eff = ERF::Overrides::FindGaugeEffect(sp))
+            if (auto const* eff = ERF::Overrides::FindGaugeEffect(sp))
                 r.magnitude = eff->effectItem.magnitude;
             else
                 r.magnitude = defaultMagnitude;
@@ -262,7 +262,7 @@ void __stdcall ERF_UI::DrawEditGauge() {
         }
     }
 
-    auto passFilter = [&](const _SpellRow& r) -> bool {
+    auto passFilter = [&](const _SpellRow& r) {
         if (filterBuf[0] == '\0') return true;
 
         auto toLowerInPlace = [](std::string& s) {
@@ -282,10 +282,10 @@ void __stdcall ERF_UI::DrawEditGauge() {
         toLowerInPlace(form);
         toLowerInPlace(name);
 
-        if (edid.find(f) != std::string::npos) return true;
-        if (plugin.find(f) != std::string::npos) return true;
-        if (form.find(f) != std::string::npos) return true;
-        if (!name.empty() && name.find(f) != std::string::npos) return true;
+        if (edid.contains(f)) return true;
+        if (plugin.contains(f)) return true;
+        if (form.contains(f)) return true;
+        if (!name.empty() && name.contains(f)) return true;
 
         return false;
     };

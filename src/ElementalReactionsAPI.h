@@ -55,6 +55,7 @@ struct ERF_ReactionDesc_Public {
     std::uint32_t hudTint;
     ERF_ReactionCallback cb;
     void* user;
+    const char* iconName;
 };
 
 // 3) Pré-efeito (contínuo por elemento)
@@ -77,7 +78,7 @@ struct ERF_StateDesc_Public {
     std::uint32_t keywordID;
 };
 
-// ===================== Interface V1 (DEFINIÇÃO ÚNICA!) =====================
+// ===================== Interface V1 =====================
 struct ERF_API_V1 {
     std::uint32_t version;  // ERF_API_VERSION
 

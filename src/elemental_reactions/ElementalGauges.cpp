@@ -122,8 +122,8 @@ namespace Gauges {
         if (i >= e.posInList.size()) return;
         if (e.posInList[i] != 0xFFFF) return;
         const ERF_ElementHandle h = handleFromIndex(i);
-        const auto bit = static_cast<unsigned>(h - 1);
-        if (bit < 64) e.presentMask |= (UINT64_C(1) << bit);
+
+        if (const auto bit = static_cast<unsigned>(h - 1); bit < 64) e.presentMask |= (UINT64_C(1) << bit);
         e.posInList[i] = static_cast<std::uint16_t>(e.presentList.size());
         e.presentList.push_back(h);
     }
@@ -134,8 +134,8 @@ namespace Gauges {
         if (pos == 0xFFFF) return;
         const auto lastIdx = static_cast<std::uint16_t>(e.presentList.size() - 1);
         const ERF_ElementHandle h = handleFromIndex(i);
-        const auto bit = static_cast<unsigned>(h - 1);
-        if (bit < 64) e.presentMask &= ~(UINT64_C(1) << bit);
+
+        if (const auto bit = static_cast<unsigned>(h - 1); bit < 64) e.presentMask &= ~(UINT64_C(1) << bit);
         if (pos != lastIdx) {
             const ERF_ElementHandle lastH = e.presentList[lastIdx];
             e.presentList[pos] = lastH;
@@ -220,6 +220,8 @@ namespace Gauges {
 namespace {
     thread_local std::vector<std::uint32_t> TL_vals32;
     thread_local std::vector<std::uint32_t> TL_cols32;
+    thread_local std::vector<const char*> TL_accumIcons;
+    thread_local std::vector<ERF_ElementHandle> TL_elemsNZ;
 
     static std::vector<std::uint32_t> g_colorLUT;
 
@@ -279,10 +281,10 @@ namespace {
         if (elem == 0) {
             const float invSum = 1.0f / static_cast<float>(e.sumAll);
 
-            auto rhOpt = RR.pickBestFast(e.v, e.presentList, e.sumAll, invSum);
-            if (!rhOpt) return false;
+            auto bestOpt = RR.pickBestFast(e.v, e.presentList, e.sumAll, invSum);
+            if (!bestOpt) return false;
 
-            const ERF_ReactionHandle rh = *rhOpt;
+            const ERF_ReactionHandle rh = bestOpt->handle;
             const ERF_ReactionDesc* r = RR.get(rh);
             if (!r) return false;
 
@@ -345,10 +347,10 @@ namespace {
         const int sum = v;
         const float invSum = 1.0f / static_cast<float>(sum);
 
-        auto rhOpt = RR.pickBestFast(totals, present, sum, invSum);
-        if (!rhOpt) return false;
+        auto bestOpt = RR.pickBestFast(totals, present, sum, invSum);
+        if (!bestOpt) return false;
 
-        const ERF_ReactionHandle rh = *rhOpt;
+        const ERF_ReactionHandle rh = bestOpt->handle;
         const ERF_ReactionDesc* r = RR.get(rh);
         if (!r) return false;
 
@@ -358,7 +360,7 @@ namespace {
             e.v[idx] = 0;
             e.lastHitH[idx] = nowH;
             e.lastEvalH[idx] = nowH;
-            Gauges::onValChange(e, idx, static_cast<int>(v), 0);
+            Gauges::onValChange(e, idx, v, 0);
         }
 
         ApplyElementLocksForReaction(e, r->elements, nowH, r->elementLockoutSeconds, r->elementLockoutIsRealTime);
@@ -878,8 +880,11 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
 
     TL_vals32.clear();
     TL_cols32.clear();
+    TL_accumIcons.clear();
+    TL_elemsNZ.clear();
     TL_vals32.reserve(e.presentList.size());
     TL_cols32.reserve(e.presentList.size());
+    TL_elemsNZ.reserve(e.presentList.size());
 
     const auto colors = GetColorLUT();
     const std::size_t beginE = Gauges::firstIndex();
@@ -892,7 +897,8 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
         if (vv == 0) continue;
 
         newSum += vv;
-        TL_vals32.push_back(static_cast<std::uint32_t>(vv));
+        TL_vals32.push_back(static_cast<std::uint32_t>(std::min<int>(vv, 100)));
+        TL_elemsNZ.push_back(h);
 
         const std::size_t colorIdx = i;
         const std::uint32_t rgb = (colorIdx < colors.size()) ? colors[colorIdx] : 0xFFFFFFu;
@@ -939,8 +945,43 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
         if (!anyElemLock && !anyReactCd && !anyReactFlag) {
             m.erase(it);
         }
+        bundle.icons = std::span<const char* const>();
         return std::nullopt;
     }
+
+    auto& RR = ReactionRegistry::get();
+    if (const bool singleMode = ERF::GetConfig().isSingle.load(std::memory_order_relaxed); singleMode) {
+        TL_accumIcons.reserve(TL_vals32.size());
+        thread_local std::vector<std::uint8_t> TL_totals;
+
+        if (TL_totals.size() < e.v.size()) TL_totals.resize(e.v.size());
+        TL_totals.assign(e.v.size(), 0);
+        for (std::size_t k = 0; k < TL_vals32.size(); ++k) {
+            const auto elemH = TL_elemsNZ[k];
+            const auto idx = Gauges::idx(elemH);
+
+            std::fill(TL_totals.begin(), TL_totals.end(), 0);
+            TL_totals[idx] = static_cast<std::uint8_t>(std::min<std::uint32_t>(TL_vals32[k], 100));
+
+            const int sum = TL_totals[idx];
+            if (sum <= 0) {
+                TL_accumIcons.push_back(nullptr);
+                continue;
+            }
+
+            const float inv = 1.0f / static_cast<float>(sum);
+            std::array<ERF_ElementHandle, 1> present{elemH};
+            auto best = RR.pickBestFast(TL_totals, {present.data(), present.size()}, sum, inv);
+            TL_accumIcons.push_back(best && best->icon ? best->icon : nullptr);
+        }
+    } else {
+        const int sumAll = newSum;
+        const float invAll = 1.0f / static_cast<float>(sumAll);
+        auto best = RR.pickBestFast(e.v, e.presentList, sumAll, invAll);
+        TL_accumIcons.push_back(best && best->icon ? best->icon : nullptr);
+    }
+
+    bundle.icons = std::span<const char* const>(TL_accumIcons.data(), TL_accumIcons.size());
 
     return bundle;
 }

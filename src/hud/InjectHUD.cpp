@@ -34,12 +34,14 @@ namespace {
         std::vector<std::uint32_t> comboTintsRGB;
         std::vector<double> accumValues;
         std::vector<std::uint32_t> accumColorsRGB;
+        std::vector<const char*> IconNames;
         std::vector<ActiveReactionHUD> actives;
         HUDTLS() {
             comboRemain01.reserve(kHUD_TLS_CAP);
             comboTintsRGB.reserve(kHUD_TLS_CAP);
             accumValues.reserve(kHUD_TLS_CAP);
             accumColorsRGB.reserve(kHUD_TLS_CAP);
+            IconNames.reserve(kHUD_TLS_CAP * 2);
             actives.reserve(8);
         }
     };
@@ -74,8 +76,10 @@ namespace {
 
             if (const auto* rd = RR.get(pr.reaction)) {
                 hud.tint = rd->Tint;
+                hud.icon = rd->iconName.empty() ? nullptr : rd->iconName.c_str();
             } else {
                 hud.tint = 0xFFFFFF;
+                hud.icon = nullptr;
             }
 
             auto [__itC, __insertedC] = combos.try_emplace(pr.id);
@@ -316,13 +320,62 @@ void InjectHUD::ERFWidget::EnsureArrays() {
     _view->CreateArray(&_arrComboTints);
     _view->CreateArray(&_arrAccumVals);
     _view->CreateArray(&_arrAccumCols);
+    _view->CreateArray(&_arrIconNames);
 
     _args[0] = _arrComboRemain;
     _args[1] = _arrComboTints;
     _args[2] = _arrAccumVals;
     _args[3] = _arrAccumCols;
+    _args[4] = _arrIconNames;
 
     _arraysInit = true;
+}
+
+bool InjectHUD::ERFWidget::FillArrayNames(RE::GFxValue& arr, const std::vector<const char*>& names,
+                                          std::uint64_t& lastHash) {
+    bool changed = false;
+
+    const std::uint32_t cur = arr.GetArraySize();
+
+    if (const auto want = static_cast<std::uint32_t>(names.size()); cur != want) {
+        _view->CreateArray(&arr);
+        arr.SetArraySize(want);
+        for (std::uint32_t i = 0; i < want; ++i) {
+            RE::GFxValue v;
+            if (names[i] && names[i][0] != '\0')
+                v.SetString(names[i]);
+            else
+                v.SetNull();
+            arr.SetElement(i, v);
+        }
+        changed = true;
+    } else {
+        for (std::uint32_t i = 0; i < want; ++i) {
+            RE::GFxValue v;
+            if (names[i] && names[i][0] != '\0')
+                v.SetString(names[i]);
+            else
+                v.SetNull();
+            arr.SetElement(i, v);
+        }
+    }
+
+    std::uint64_t h = fnv1a64_init();
+    for (const char* s : names) {
+        if (!s) {
+            h = fnv1a64_mix(h, 0);
+            continue;
+        }
+        for (const auto* p = reinterpret_cast<const unsigned char*>(s); *p; ++p) {
+            h = fnv1a64_mix(h, *p);
+        }
+        h = fnv1a64_mix(h, 0);
+    }
+    if (h != lastHash) {
+        lastHash = h;
+        changed = true;
+    }
+    return changed;
 }
 
 bool InjectHUD::ERFWidget::FillArrayDoubles(RE::GFxValue& arr, const std::vector<double>& src,
@@ -389,21 +442,23 @@ void InjectHUD::ERFWidget::ClearAndHide(bool isSingle, bool isHorizontal, float 
     _view->CreateArray(&_arrComboTints);
     _view->CreateArray(&_arrAccumVals);
     _view->CreateArray(&_arrAccumCols);
+    _view->CreateArray(&_arrIconNames);
 
     _isSingle.SetBoolean(isSingle);
     _isHorin.SetBoolean(isHorizontal);
-    _spacing = spacingPx;
+    _spacing.SetNumber(spacingPx);
 
     _args[0] = _arrComboRemain;
     _args[1] = _arrComboTints;
     _args[2] = _arrAccumVals;
     _args[3] = _arrAccumCols;
-    _args[4] = _isSingle;
-    _args[5] = _isHorin;
-    _args[6] = _spacing;
+    _args[4] = _arrIconNames;
+    _args[5] = _isSingle;
+    _args[6] = _isHorin;
+    _args[7] = _spacing;
 
     RE::GFxValue ret;
-    _object.Invoke("setAll", &ret, _args, 7);
+    _object.Invoke("setAll", &ret, _args, 8);
 
     if (_lastVisible) {
         RE::GFxValue vis;
@@ -419,7 +474,8 @@ void InjectHUD::ERFWidget::ClearAndHide(bool isSingle, bool isHorizontal, float 
 void InjectHUD::ERFWidget::SetAll(const std::vector<double>& comboRemain01,
                                   const std::vector<std::uint32_t>& comboTintsRGB,
                                   const std::vector<double>& accumValues,
-                                  const std::vector<std::uint32_t>& accumColorsRGB, bool isSingle, bool isHorizontal,
+                                  const std::vector<std::uint32_t>& accumColorsRGB,
+                                  const std::vector<const char*>& iconNames, bool isSingle, bool isHorizontal,
                                   float spacingPx) {
     if (!_view) return;
 
@@ -429,27 +485,31 @@ void InjectHUD::ERFWidget::SetAll(const std::vector<double>& comboRemain01,
     const bool chComboT = FillArrayU32AsNumber(_arrComboTints, comboTintsRGB, _hComboTints);
     const bool chAccumV = FillArrayDoubles(_arrAccumVals, accumValues, _hAccumVals);
     const bool chAccumC = FillArrayU32AsNumber(_arrAccumCols, accumColorsRGB, _hAccumCols);
+    const bool chIcons = FillArrayNames(_arrIconNames, iconNames, _hIconNames);
 
     _isSingle.SetBoolean(isSingle);
     _isHorin.SetBoolean(isHorizontal);
-    _spacing = spacingPx;
+    _spacing.SetNumber(spacingPx);
 
     _args[0] = _arrComboRemain;
     _args[1] = _arrComboTints;
     _args[2] = _arrAccumVals;
     _args[3] = _arrAccumCols;
-    _args[4] = _isSingle;
-    _args[5] = _isHorin;
-    _args[6] = _spacing;
+    _args[4] = _arrIconNames;
+    _args[5] = _isSingle;
+    _args[6] = _isHorin;
+    _args[7] = _spacing;
 
-    bool flagsChanged = (_lastIsSingle != isSingle || _lastIsHor != isHorizontal ||
-                         !(std::isfinite(_lastSpacing) && std::abs(_lastSpacing - spacingPx) < 1e-6));
-    const bool needInvoke = flagsChanged || chComboR || chComboT || chAccumV || chAccumC;
+    const bool flagsChanged = (_lastIsSingle != isSingle) || (_lastIsHor != isHorizontal) ||
+                              !(std::isfinite(_lastSpacing) && std::abs(_lastSpacing - spacingPx) < 1e-6);
+
+    const bool needInvoke = flagsChanged || chComboR || chComboT || chAccumV || chAccumC || chIcons;
 
     RE::GFxValue ret;
     bool ok = true;
+
     if (needInvoke) {
-        ok = _object.Invoke("setAll", &ret, _args, 7);
+        ok = _object.Invoke("setAll", &ret, _args, 8);
         _lastIsSingle = isSingle;
         _lastIsHor = isHorizontal;
         _lastSpacing = spacingPx;
@@ -519,8 +579,10 @@ void InjectHUD::UpdateFor(RE::Actor* actor, double nowRt, float nowH) {
 
     auto& comboRemain01 = g_hudTLS.comboRemain01;
     auto& comboTintsRGB = g_hudTLS.comboTintsRGB;
+    auto& IconNames = g_hudTLS.IconNames;
     comboRemain01.clear();
     comboTintsRGB.clear();
+    IconNames.clear();
 
     const std::size_t n = std::min<std::size_t>(acts.size(), 3);
     for (std::size_t i = 0; i < n; ++i) {
@@ -533,6 +595,7 @@ void InjectHUD::UpdateFor(RE::Actor* actor, double nowRt, float nowH) {
 
         comboRemain01.push_back(frac);
         comboTintsRGB.push_back(r.tint);
+        IconNames.push_back(r.icon ? r.icon : nullptr);
     }
 
     auto& accumValues = g_hudTLS.accumValues;
@@ -546,13 +609,14 @@ void InjectHUD::UpdateFor(RE::Actor* actor, double nowRt, float nowH) {
         if (accumColorsRGB.capacity() < b.colors.size()) accumColorsRGB.reserve(b.colors.size());
         for (auto v : b.values) accumValues.push_back(double(std::clamp<std::uint32_t>(v, 0, 100)));
         accumColorsRGB.assign(b.colors.begin(), b.colors.end());
+        for (auto s : b.icons) IconNames.push_back(s);
     }
 
     w.FollowActorHead(actor);
     const bool isSingle = g_snap.isSingle;
     const bool isHor = w._isPlayerWidget ? g_snap.playerHorizontal : g_snap.npcHorizontal;
     const float space = w._isPlayerWidget ? g_snap.playerSpacing : g_snap.npcSpacing;
-    w.SetAll(comboRemain01, comboTintsRGB, accumValues, accumColorsRGB, isSingle, isHor, space);
+    w.SetAll(comboRemain01, comboTintsRGB, accumValues, accumColorsRGB, IconNames, isSingle, isHor, space);
 }
 
 void InjectHUD::BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float seconds, bool realTime) {

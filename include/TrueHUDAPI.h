@@ -395,11 +395,17 @@ namespace TRUEHUD_API {
     /// <param name="a_interfaceVersion">The interface version to request</param>
     /// <returns>The pointer to the API singleton, or nullptr if request failed</returns>
     [[nodiscard]] inline void* RequestPluginAPI(const InterfaceVersion a_interfaceVersion = InterfaceVersion::V4) {
-        auto pluginHandle = GetModuleHandle("TrueHUD.dll");
+        // usa explicitamente a versão ANSI para combinar com const char*
+        HMODULE pluginHandle = GetModuleHandleA("TrueHUD.dll");
+        if (!pluginHandle) {
+            return nullptr;
+        }
+
         auto requestAPIFunction = (_RequestPluginAPI)GetProcAddress(pluginHandle, "RequestPluginAPI");
         if (requestAPIFunction) {
             return requestAPIFunction(a_interfaceVersion);
         }
+
         return nullptr;
     }
 }

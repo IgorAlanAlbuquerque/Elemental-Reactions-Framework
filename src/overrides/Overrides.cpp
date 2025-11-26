@@ -21,10 +21,10 @@ namespace {
         RE::SpellItem* best = nullptr;
         int bestLO = -1;
 
-        auto getLO = [&](const RE::TESFile* f) -> int {
+        auto getLO = [&](const RE::TESFile* f) {
             if (!f) return -1;
             int i = 0;
-            for (auto* file : dh->files) {
+            for (auto const* file : dh->files) {
                 if (file == f) return i;
                 ++i;
             }
@@ -75,8 +75,8 @@ size_t SpellKeyHash::operator()(const SpellKey& k) const noexcept {
 
 const std::filesystem::path& ERF_GetThisDllDir();
 
-static RE::EffectSetting* s_mgefGauge = nullptr;
-static std::unordered_set<RE::BGSKeyword*> s_erfKeywords;
+static RE::EffectSetting* s_mgefGauge = nullptr;           // NOSONAR
+static std::unordered_set<RE::BGSKeyword*> s_erfKeywords;  // NOSONAR
 
 bool ERF::Overrides::InitResources() { return (s_mgefGauge != nullptr); }
 
@@ -84,7 +84,7 @@ void ERF::Overrides::SetGaugeEffect(RE::EffectSetting* mgef) { s_mgefGauge = mge
 
 bool ERF::Overrides::HasERFKeyword(const RE::EffectSetting* mgef) {
     if (!mgef) return false;
-    for (auto* kw : mgef->GetKeywords()) {
+    for (auto const* kw : mgef->GetKeywords()) {
         if (!kw) continue;
         if (ElementRegistry::get().findByKeyword(kw).has_value()) return true;
     }
@@ -106,7 +106,7 @@ void ERF::Overrides::EnsureGaugeEffect(RE::SpellItem* sp, float defaultMag) {
     if (!sp || !s_mgefGauge) return;
     if (FindGaugeEffect(sp)) return;
 
-    RE::Effect* eff = new RE::Effect();
+    auto* eff = new RE::Effect();
     eff->baseEffect = s_mgefGauge;
     eff->effectItem.magnitude = defaultMag;
     eff->effectItem.area = 0;
@@ -128,12 +128,12 @@ std::vector<RE::SpellItem*> ERF::Overrides::ScanAllSpellsWithKeyword() {
     std::vector<RE::SpellItem*> out;
 
     auto* dh = RE::TESDataHandler::GetSingleton();
-    auto& arr = dh->GetFormArray<RE::SpellItem>();
+    auto const& arr = dh->GetFormArray<RE::SpellItem>();
 
-    auto getLoadOrderIndex = [&](const RE::TESFile* f) -> int {
+    auto getLoadOrderIndex = [&](const RE::TESFile* f) {
         if (!f) return -1;
         int idx = 0;
-        for (auto* file : dh->files) {
+        for (auto const* file : dh->files) {
             if (file == f) return idx;
             ++idx;
         }
@@ -151,7 +151,7 @@ std::vector<RE::SpellItem*> ERF::Overrides::ScanAllSpellsWithKeyword() {
         if (it == best.end()) {
             best.emplace(key, sp);
         } else {
-            RE::SpellItem* cur = it->second;
+            RE::SpellItem const* cur = it->second;
             const int loCur = getLoadOrderIndex(cur->GetDescriptionOwnerFile());
             if (lo > loCur) {
                 it->second = sp;
@@ -176,7 +176,7 @@ std::vector<RE::SpellItem*> ERF::Overrides::ScanAllSpellsWithKeyword() {
     }
 
     out.reserve(best.size());
-    for (auto& [key, sp] : best) {
+    for (auto const& [key, sp] : best) {
         out.push_back(sp);
     }
     return out;
@@ -202,8 +202,7 @@ std::string ERF::Overrides::FormIDHex(std::uint32_t id) {
 }
 
 static std::filesystem::path ComputeOverridesPath() {
-    const auto& dllDir = ERF_GetThisDllDir();
-    if (!dllDir.empty()) {
+    if (const auto& dllDir = ERF_GetThisDllDir(); !dllDir.empty()) {
         return dllDir / "ERF" / "spell_overrides.json";
     }
 
@@ -228,7 +227,7 @@ bool ERF::Overrides::EnsureOverridesFolder() {
 
 std::string_view ERF::Overrides::OwningPlugin(const RE::TESForm* f) {
     if (!f) return {};
-    if (auto* file = f->GetDescriptionOwnerFile()) {
+    if (auto const* file = f->GetDescriptionOwnerFile()) {
         if (std::string_view name = file->GetFilename(); !name.empty()) return name;
     }
     return {};

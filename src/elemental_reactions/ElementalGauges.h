@@ -14,7 +14,7 @@
 
 namespace ElementalGauges {
     struct HudGaugeBundle {
-        std::uint32_t Tint{0xFFFFFF};
+        std::span<const char* const> icons;
 
         std::span<const std::uint32_t> values;
         std::span<const std::uint32_t> colors;

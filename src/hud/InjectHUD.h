@@ -30,6 +30,7 @@ namespace InjectHUD {
         float durationS{0.f};
 
         std::uint32_t tint{0xFFFFFF};
+        const char* icon{nullptr};
     };
 
     struct Smooth01 {
@@ -62,7 +63,7 @@ namespace InjectHUD {
         float npcScale{1.0f};
     };
 
-    constexpr auto ERF_SWF_PATH = "erfgauge/erfgauge.swf";
+    constexpr auto ERF_SWF_PATH = "erfgauge/ERF_UI.swf";
     constexpr auto ERF_SYMBOL_NAME = "ERF_Gauge";
     constexpr uint32_t ERF_WIDGET_TYPE = FOURCC('E', 'L', 'R', 'E');
 
@@ -99,7 +100,7 @@ namespace InjectHUD {
 
         void SetAll(const std::vector<double>& comboRemain01, const std::vector<std::uint32_t>& comboTintsRGB,
                     const std::vector<double>& accumValues, const std::vector<std::uint32_t>& accumColorsRGB,
-                    bool isSingle, bool isHorizontal, float spacingPx);
+                    const std::vector<const char*>& iconNames, bool isSingle, bool isHorizontal, float spacingPx);
 
         void ResetSmoothing() { _lastX = _lastY = std::numeric_limits<double>::quiet_NaN(); }
         void ClearAndHide(bool isSingle, bool isHorizontal, float spacingPx);
@@ -111,6 +112,7 @@ namespace InjectHUD {
         RE::GFxValue _arrComboTints;
         RE::GFxValue _arrAccumVals;
         RE::GFxValue _arrAccumCols;
+        RE::GFxValue _arrIconNames;
         RE::GFxValue _isSingle;
         RE::GFxValue _isHorin;
         RE::GFxValue _spacing;
@@ -119,14 +121,16 @@ namespace InjectHUD {
         std::uint64_t _hComboTints{0};
         std::uint64_t _hAccumVals{0};
         std::uint64_t _hAccumCols{0};
+        std::uint64_t _hIconNames{0};
 
         bool _lastIsSingle{true};
         bool _lastIsHor{true};
         float _lastSpacing{std::numeric_limits<float>::quiet_NaN()};
 
-        RE::GFxValue _args[7];
+        RE::GFxValue _args[8];
 
         void EnsureArrays();
+        bool FillArrayNames(RE::GFxValue& arr, const std::vector<const char*>& names, std::uint64_t& lastHash);
         bool FillArrayDoubles(RE::GFxValue& arr, const std::vector<double>& src, std::uint64_t& lastHash);
         bool FillArrayU32AsNumber(RE::GFxValue& arr, const std::vector<std::uint32_t>& src, std::uint64_t& lastHash);
     };
