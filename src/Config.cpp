@@ -31,8 +31,7 @@ const std::filesystem::path& ERF_GetThisDllDir();
 namespace ERF {
 
     std::filesystem::path Config::IniPath() {
-        const auto& dllDir = ERF_GetThisDllDir();
-        if (!dllDir.empty()) {
+        if (const auto& dllDir = ERF_GetThisDllDir(); !dllDir.empty()) {
             return dllDir / "ERF" / "ElementalReactionsFramework.ini";
         }
 

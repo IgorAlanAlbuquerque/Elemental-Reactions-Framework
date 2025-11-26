@@ -130,7 +130,7 @@ static void RegisterEverything_Core() {
         p.scalePerPoint = 0.01f;
         p.minIntensity = 0.0f;
         p.maxIntensity = 0.60f;
-        p.durationSeconds = 0.0f;  // contínuo
+        p.durationSeconds = 0.0f;
         p.durationIsRealTime = true;
         p.cooldownSeconds = 0.0f;
         p.cooldownIsRealTime = true;
@@ -140,30 +140,67 @@ static void RegisterEverything_Core() {
         api->RegisterPreEffect(p);
     }
 
-    // 5) Reação simples: Solo Fire 85% (callback de log)
+    // 5) Reação simples: Solo Fire 85%
     {
-        ERF_ElementHandle elems[] = {fire};
+        // --- Fire ---
+        ERF_ElementHandle elemsFire[] = {fire};
+        ERF_ReactionDesc_Public rF{};
+        rF.name = "Solo_Fire_85";
+        rF.elements = elemsFire;
+        rF.elementCount = 1;
+        rF.ordered = false;
+        rF.minPctEach = 0.85f;
+        rF.minSumSelected = 0.0f;
+        rF.cooldownSeconds = 0.5f;
+        rF.cooldownIsRealTime = true;
+        rF.elementLockoutSeconds = 10.0f;
+        rF.elementLockoutIsRealTime = true;
+        rF.clearAllOnTrigger = true;
+        rF.hudTint = 0xF04A3A;
+        rF.cb = &OnReaction;
+        rF.user = nullptr;
+        rF.iconName = "ERF_ICON__erf_core__fire";
+        api->RegisterReaction(rF);
 
-        ERF_ReactionDesc_Public r{};
-        r.name = "Solo_Fire_85";
-        r.elements = elems;
-        r.elementCount = 1;
-        r.ordered = false;
-        r.minPctEach = 0.85f;
-        r.minSumSelected = 0.0f;
+        // --- Frost ---
+        ERF_ElementHandle elemsFrost[] = {frost};
+        ERF_ReactionDesc_Public rFr{};
+        rFr.name = "Solo_Frost_85";
+        rFr.elements = elemsFrost;
+        rFr.elementCount = 1;
+        rFr.ordered = false;
+        rFr.minPctEach = 0.85f;
+        rFr.minSumSelected = 0.0f;
+        rFr.cooldownSeconds = 0.5f;
+        rFr.cooldownIsRealTime = true;
+        rFr.elementLockoutSeconds = 10.0f;
+        rFr.elementLockoutIsRealTime = true;
+        rFr.clearAllOnTrigger = true;
+        rFr.hudTint = 0x4FB2FF;
+        rFr.cb = &OnReaction;
+        rFr.user = nullptr;
+        rFr.iconName = "ERF_ICON__erf_core__frost";
+        api->RegisterReaction(rFr);
 
-        r.cooldownSeconds = 0.5f;
-        r.cooldownIsRealTime = true;
-        r.elementLockoutSeconds = 10.0f;
-        r.elementLockoutIsRealTime = true;
-        r.clearAllOnTrigger = true;
-
-        r.hudTint = 0xF04A3A;
-
-        r.cb = &OnReaction;
-        r.user = nullptr;
-
-        api->RegisterReaction(r);
+        // --- Shock ---
+        ERF_ElementHandle elemsShock[] = {shock};
+        ERF_ReactionDesc_Public rS{};
+        rS.name = "Solo_Shock_85";
+        rS.elements = elemsShock;
+        rS.elementCount = 1;
+        rS.ordered = false;
+        rS.minPctEach = 0.85f;
+        rS.minSumSelected = 0.0f;
+        rS.cooldownSeconds = 0.5f;
+        rS.cooldownIsRealTime = true;
+        rS.elementLockoutSeconds = 10.0f;
+        rS.elementLockoutIsRealTime = true;
+        rS.clearAllOnTrigger = true;
+        rS.hudTint = 0xFFD02A;
+        rS.cb = &OnReaction;
+        rS.user = nullptr;
+        rS.iconName = "ERF_ICON__erf_core__shock";
+        api->RegisterReaction(rS);
     }
 }
 

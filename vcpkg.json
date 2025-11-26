@@ -3,10 +3,13 @@
   "name": "elemental-reactions-framework",
   "version-string": "0.0.1",
   "dependencies": [
-    "commonlibsse-ng",
     "simpleini",
     "nlohmann-json",
-    "unordered-dense"
+    "unordered-dense",
+    "fmt",
+    "spdlog",
+    "directxtk",
+    "rapidcsv"
   ],
   "builtin-baseline": "b94ab47c998b93fe72b0f501eaac70f96328019e"
 }

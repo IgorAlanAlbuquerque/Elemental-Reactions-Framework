@@ -60,6 +60,7 @@ static ERF_ReactionHandle API_RegisterReaction(const ERF_ReactionDesc_Public& d)
     in.clearAllOnTrigger = d.clearAllOnTrigger;
 
     in.Tint = d.hudTint ? d.hudTint : 0xFFFFFF;
+    in.iconName = (d.iconName && d.iconName[0] != '\0') ? d.iconName : "";
 
     in.cb = d.cb;
     in.user = d.user;

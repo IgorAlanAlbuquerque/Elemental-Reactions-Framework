@@ -253,7 +253,7 @@ void __stdcall ERF_UI::DrawEditGauge() {
             r.formHex = ERF::Overrides::FormIDHex(ERF::Overrides::RawFormID(sp));
             r.name = ERF::Overrides::GetDisplayName(sp);
 
-            if (auto* eff = ERF::Overrides::FindGaugeEffect(sp))
+            if (auto const* eff = ERF::Overrides::FindGaugeEffect(sp))
                 r.magnitude = eff->effectItem.magnitude;
             else
                 r.magnitude = defaultMagnitude;
@@ -262,7 +262,7 @@ void __stdcall ERF_UI::DrawEditGauge() {
         }
     }
 
-    auto passFilter = [&](const _SpellRow& r) -> bool {
+    auto passFilter = [&](const _SpellRow& r) {
         if (filterBuf[0] == '\0') return true;
 
         auto toLowerInPlace = [](std::string& s) {

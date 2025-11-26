@@ -39,7 +39,7 @@ namespace {
         const float nowH = RE::Calendar::GetSingleton()->GetHoursPassed();
         InjectHUD::OnUIFrameBegin(nowRt, nowH);
 
-        if (auto* pc = RE::PlayerCharacter::GetSingleton(); pc && pc->IsDead()) {
+        if (auto const* pc = RE::PlayerCharacter::GetSingleton(); pc && pc->IsDead()) {
             InjectHUD::RemoveAllWidgets();
             HUD::ResetTracking();
             return;

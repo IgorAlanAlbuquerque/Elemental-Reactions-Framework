@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "RE/Skyrim.h"
@@ -30,9 +31,16 @@ struct ERF_ReactionDesc {
     bool clearAllOnTrigger = true;
 
     std::uint32_t Tint = 0xFFFFFF;
+    std::string iconName;
 
     ERF_ReactionCallback cb = nullptr;
     void* user = nullptr;
+};
+
+struct ERF_PickBestInfo {
+    ERF_ReactionHandle handle{0};
+    std::uint32_t colorRGB{0xFFFFFF};
+    const char* icon{nullptr};
 };
 
 class ReactionRegistry {
@@ -40,9 +48,9 @@ public:
     static ReactionRegistry& get();
     ERF_ReactionHandle registerReaction(const ERF_ReactionDesc& d);
     const ERF_ReactionDesc* get(ERF_ReactionHandle h) const;
-    std::optional<ERF_ReactionHandle> pickBestFast(const std::vector<std::uint8_t>& totals,
-                                                   const std::vector<ERF_ElementHandle>& present, int sumAll,
-                                                   float invSumAll) const;
+    std::optional<ERF_PickBestInfo> pickBestFast(std::span<const std::uint8_t> totals,
+                                                 std::span<const ERF_ElementHandle> present, int sumAll,
+                                                 float invSumAll) const;
     std::size_t size() const noexcept;
     void freeze();
     bool isFrozen() const noexcept { return _indexed; }
@@ -63,7 +71,7 @@ private:
 
     void buildIndex_() const;
     static Mask makeMask_(const std::vector<ERF_ElementHandle>& elems);
-    static std::optional<ERF_ReactionHandle> pickBest_core(const std::vector<std::uint8_t>& totals,
-                                                           const std::vector<ERF_ElementHandle>& present,
-                                                           float invSumAll, const ReactionRegistry* self);
+    static std::optional<ERF_ReactionHandle> pickBest_core(std::span<const std::uint8_t> totals,
+                                                           std::span<const ERF_ElementHandle> present, float invSumAll,
+                                                           const ReactionRegistry* self);
 };

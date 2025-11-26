@@ -7,7 +7,7 @@
 #include "../common/Helpers.h"
 
 namespace {
-    inline std::uint8_t valueForHandle(const std::vector<std::uint8_t>& totals, ERF_ElementHandle h) {
+    static int valueForHandle(std::span<const std::uint8_t> totals, ERF_ElementHandle h) {
         if (h == 0) return 0;
         const std::size_t idx = static_cast<std::size_t>(h);
         return (idx < totals.size()) ? totals[idx] : 0;
@@ -84,8 +84,8 @@ void ReactionRegistry::buildIndex_() const {
 
 void ReactionRegistry::freeze() { buildIndex_(); }
 
-std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(const std::vector<std::uint8_t>& totals,
-                                                                  const std::vector<ERF_ElementHandle>& present,
+std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(std::span<const std::uint8_t> totals,
+                                                                  std::span<const ERF_ElementHandle> present,
                                                                   float invSumAll, const ReactionRegistry* self) {
     self->buildIndex_();
 
@@ -166,10 +166,20 @@ std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(const std::vec
     return bestH;
 }
 
-std::optional<ERF_ReactionHandle> ReactionRegistry::pickBestFast(const std::vector<std::uint8_t>& totals,
-                                                                 const std::vector<ERF_ElementHandle>& present,
-                                                                 int sumAll, float invSumAll) const {
+std::optional<ERF_PickBestInfo> ReactionRegistry::pickBestFast(std::span<const std::uint8_t> totals,
+                                                               std::span<const ERF_ElementHandle> present, int sumAll,
+                                                               float invSumAll) const {
     if (sumAll <= 0) return std::nullopt;
 
-    return pickBest_core(totals, present, invSumAll, this);
+    auto rh = pickBest_core(totals, present, invSumAll, this);
+    if (!rh) return std::nullopt;
+
+    const ERF_ReactionDesc* d = get(*rh);
+    if (!d) return std::nullopt;
+
+    ERF_PickBestInfo info;
+    info.handle = *rh;
+    info.colorRGB = d->Tint;
+    info.icon = d->iconName.empty() ? nullptr : d->iconName.c_str();
+    return info;
 }
