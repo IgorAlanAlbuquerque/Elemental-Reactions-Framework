@@ -11,6 +11,7 @@
 #include <thread>
 #include <type_traits>
 #include <unordered_map>
+#include <vector>
 
 #include "../Config.h"
 #include "../common/Helpers.h"
@@ -77,11 +78,11 @@ namespace GaugesHook {
 
     struct EffCtx {
         RE::ActorHandle target;
-        Elem elem;
+        std::vector<Elem> elems;
         std::uint16_t uid;
     };
 
-    static StripedMap<const RE::ActiveEffect*, EffCtx, 64> g_ctx;  // NOSONAR
+    static StripedMap<const RE::ActiveEffect*, EffCtx, 64> g_ctx;
 
     static StripedMap<std::uint64_t, double, 64> g_accum;
 
@@ -104,21 +105,22 @@ namespace GaugesHook {
         return false;
     }
 
-    static std::optional<Elem> ClassifyElement(const RE::EffectSetting* mgef) {
-        if (!mgef) return std::nullopt;
-        if (IsGaugeAccCarrier(mgef)) {
-            return std::nullopt;
-        }
+    static std::vector<Elem> ClassifyElements(const RE::EffectSetting* mgef) {
+        std::vector<Elem> out;
+        if (!mgef || IsGaugeAccCarrier(mgef)) return out;
 
         const auto kws = mgef->GetKeywords();
         for (RE::BGSKeyword* kw : kws) {
             if (!kw) continue;
             if (auto h = ElementRegistry::get().findByKeyword(kw)) {
-                return *h;
+                if (std::find(out.begin(), out.end(), *h) == out.end()) {
+                    out.push_back(*h);
+                }
             }
         }
-        return std::nullopt;
+        return out;
     }
+
     static std::uint64_t MakeKey(const RE::Actor* a, Elem e) {
         const std::uint64_t hi = static_cast<std::uint64_t>(a ? a->GetFormID() : 0);
         const std::uint64_t lo = static_cast<std::uint64_t>(e);
@@ -204,16 +206,18 @@ namespace GaugesHook {
                 return;
             }
 
-            if (auto elem = ClassifyElement(mgef)) {
+            if (auto elems = ClassifyElements(mgef); !elems.empty()) {
                 g_ctx.upsert(self,
-                             [&](auto& mp) { mp[self] = EffCtx{actor->CreateRefHandle(), *elem, self->usUniqueID}; });
+                             [&](auto& mp) { mp[self] = EffCtx{actor->CreateRefHandle(), elems, self->usUniqueID}; });
 
                 if (IsInstantaneous(mgef, self)) {
                     double acc = g_lastAccHint.get(KeyActorOnly(actor)).value_or(0.0);
                     if (acc > 0.001) {
                         const int inc = std::max(1, (int)std::lround(acc));
                         ElementalGaugesHook::StartHUDTick();
-                        ElementalGauges::Add(actor, *elem, inc);
+                        for (auto elem : elems) {
+                            ElementalGauges::Add(actor, elem, inc);
+                        }
                     }
                 }
             }
@@ -237,6 +241,7 @@ namespace GaugesHook {
                 _orig(self, dt);
                 return;
             }
+
             const auto* mgef = self->GetBaseObject();
             if (mgef && IsGaugeAccCarrier(mgef)) {
                 _orig(self, dt);
@@ -244,29 +249,30 @@ namespace GaugesHook {
             }
 
             RE::Actor* target = nullptr;
-            Elem elem{};
+            std::vector<Elem> elems;
             bool haveCtx = false;
 
             if (auto c = g_ctx.get(self)) {
                 haveCtx = true;
                 target = c->target.get().get();
-                elem = c->elem;
+                elems = c->elems;
             }
 
             if (!haveCtx) {
                 RE::Actor* actor = AsActor(self->target);
                 if (mgef && actor) {
-                    if (auto e = ClassifyElement(mgef)) {
+                    auto ce = ClassifyElements(mgef);
+                    if (!ce.empty()) {
                         g_ctx.upsert(
-                            self, [&](auto& mp) { mp[self] = EffCtx{actor->CreateRefHandle(), *e, self->usUniqueID}; });
+                            self, [&](auto& mp) { mp[self] = EffCtx{actor->CreateRefHandle(), ce, self->usUniqueID}; });
                         target = actor;
-                        elem = *e;
+                        elems = std::move(ce);
                         haveCtx = true;
                     }
                 }
             }
 
-            if (!haveCtx || !target) {
+            if (!haveCtx || !target || elems.empty()) {
                 _orig(self, dt);
                 return;
             }
@@ -277,24 +283,33 @@ namespace GaugesHook {
                 return;
             }
 
-            int inc = 0;
+            int totalInc = 0;
+
             if (dt > 0.0f) {
-                const auto key = MakeKey(target, elem);
-                g_accum.upsert(key, [&](auto& mp) {
-                    double& acc = mp[key];
-                    if (mp.size() == 1) mp.reserve(64);
-                    acc += accPerSec * static_cast<double>(dt);
-                    int whole = static_cast<int>(std::floor(acc));
-                    if (whole >= 1) {
-                        inc = whole;
-                        acc -= whole;
+                for (auto elem : elems) {
+                    int inc = 0;
+
+                    const auto key = MakeKey(target, elem);
+                    g_accum.upsert(key, [&](auto& mp) {
+                        double& acc = mp[key];
+                        if (mp.size() == 1) mp.reserve(64);
+                        acc += accPerSec * static_cast<double>(dt);
+                        const int whole = static_cast<int>(std::floor(acc));
+                        if (whole >= 1) {
+                            inc = whole;
+                            acc -= whole;
+                        }
+                    });
+
+                    if (inc > 0) {
+                        totalInc += inc;
+                        ElementalGauges::Add(target, elem, inc);
                     }
-                });
+                }
             }
 
-            if (inc > 0) {
+            if (totalInc > 0) {
                 ElementalGaugesHook::StartHUDTick();
-                ElementalGauges::Add(target, elem, inc);
             }
 
             _orig(self, dt);
