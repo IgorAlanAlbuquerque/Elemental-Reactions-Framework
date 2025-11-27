@@ -109,7 +109,8 @@ namespace GaugesHook {
         std::vector<Elem> out;
         if (!mgef || IsGaugeAccCarrier(mgef)) return out;
 
-        for (const auto kws = mgef->GetKeywords(); RE::BGSKeyword* kw : kws) {
+        const auto kws = mgef->GetKeywords();
+        for (RE::BGSKeyword* kw : kws) {
             if (!kw) continue;
             if (auto h = ElementRegistry::get().findByKeyword(kw)) {
                 if (std::find(out.begin(), out.end(), *h) == out.end()) {
