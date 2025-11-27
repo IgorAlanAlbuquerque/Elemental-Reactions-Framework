@@ -6,7 +6,8 @@ StateRegistry& StateRegistry::get() {
     return R;
 }
 
-ERF_StateHandle StateRegistry::registerState(const ERF_StateDesc& d) const {
+ERF_StateHandle StateRegistry::registerState(  // NOSONAR - this method intentionally mutates the registry state
+    const ERF_StateDesc& d) {
     if (_frozen) {
         return 0;
     }
@@ -36,8 +37,8 @@ ERF_StateElementMult StateRegistry::getElementMultipliers(ERF_StateHandle state,
     return row[ei];
 }
 
-void StateRegistry::setElementMultipliers(ERF_StateHandle state, std::uint16_t elemHandle, double gaugeMult,
-                                          double healthMult) const {
+void StateRegistry::setElementMultipliers(  // NOSONAR - this method intentionally mutates the registry state
+    ERF_StateHandle state, std::uint16_t elemHandle, double gaugeMult, double healthMult) {
     if (state == 0 || elemHandle == 0) {
         return;
     }

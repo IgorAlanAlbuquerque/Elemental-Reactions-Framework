@@ -77,4 +77,11 @@ private:
                                                            std::span<const ERF_ElementHandle> present, float invSumAll,
                                                            const ReactionRegistry* self,
                                                            const std::vector<bool>* used = nullptr);
+    void evalBucketForPickBest(Mask m, std::span<const std::uint8_t> totals, float invSumAll,
+                               const std::vector<bool>* used, ERF_ReactionHandle& bestH, float& bestScore,
+                               std::size_t& bestK) const;
+    bool checkMinSumSel(ERF_ReactionHandle h, int sumSel, float invSumAll, float& fracSelOut) const;
+
+    bool checkEachElementPct(ERF_ReactionHandle h, const ERF_ReactionDesc& r, std::span<const std::uint8_t> totals,
+                             float invSumAll, int& outSumSel) const;
 };

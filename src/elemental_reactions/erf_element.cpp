@@ -30,8 +30,8 @@ void ElementRegistry::freeze() {
     for (ERF_ElementHandle h = 1; h <= static_cast<ERF_ElementHandle>(size()); ++h) {
         auto& d = _elems[static_cast<std::size_t>(h)];
         if (d.stateMultDense.size() < cap) d.stateMultDense.resize(cap, 1.0);
-        if (!d.name.empty()) _nameIndex.emplace(std::string_view{d.name}, h);
-        if (d.keyword) _kwIndex.emplace(d.keyword->GetFormID(), h);
+        if (!d.name.empty()) _nameIndex.try_emplace(std::string_view{d.name}, h);
+        if (d.keyword) _kwIndex.try_emplace(d.keyword->GetFormID(), h);
     }
     _frozen = true;
 }
@@ -45,8 +45,7 @@ const ERF_ElementDesc* ElementRegistry::get(ERF_ElementHandle h) const {
 
 std::optional<ERF_ElementHandle> ElementRegistry::findByName(std::string_view name) const {
     if (_frozen) {
-        auto it = _nameIndex.find(name);
-        if (it != _nameIndex.end()) return it->second;
+        if (auto it = _nameIndex.find(name); it != _nameIndex.end()) return it->second;
         return std::nullopt;
     }
     const auto n = static_cast<ERF_ElementHandle>(this->size());
@@ -60,8 +59,7 @@ std::optional<ERF_ElementHandle> ElementRegistry::findByName(std::string_view na
 std::optional<ERF_ElementHandle> ElementRegistry::findByKeyword(const RE::BGSKeyword* kw) const {
     if (!kw) return std::nullopt;
     if (_frozen) {
-        auto it = _kwIndex.find(kw->GetFormID());
-        if (it != _kwIndex.end()) return it->second;
+        if (auto it = _kwIndex.find(kw->GetFormID()); it != _kwIndex.end()) return it->second;
         return std::nullopt;
     }
     const auto want = kw->GetFormID();

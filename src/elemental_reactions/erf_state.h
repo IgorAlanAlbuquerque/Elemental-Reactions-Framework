@@ -25,7 +25,7 @@ class StateRegistry {
 public:
     static StateRegistry& get();
 
-    ERF_StateHandle registerState(const ERF_StateDesc& d) const;
+    ERF_StateHandle registerState(const ERF_StateDesc& d);
 
     const ERF_StateDesc* get(ERF_StateHandle h) const;
     std::optional<ERF_StateHandle> findByName(std::string_view name) const;
@@ -36,8 +36,7 @@ public:
     void freeze();
     bool isFrozen() const noexcept { return _frozen; }
 
-    void setElementMultipliers(ERF_StateHandle state, std::uint16_t elemHandle, double gaugeMult,
-                               double healthMult) const;
+    void setElementMultipliers(ERF_StateHandle state, std::uint16_t elemHandle, double gaugeMult, double healthMult);
 
     ERF_StateElementMult getElementMultipliers(ERF_StateHandle state, std::uint16_t elemHandle) const;
 
