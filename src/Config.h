@@ -9,6 +9,7 @@ namespace ERF {
         std::atomic<bool> isSingle{true};
         std::atomic<float> playerMult{1.0};
         std::atomic<float> npcMult{1.0};
+        std::atomic<int> maxReactionsPerTrigger{1};
 
         std::atomic<float> playerXPosition{0.0};
         std::atomic<float> playerYPosition{0.0};

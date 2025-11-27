@@ -59,6 +59,17 @@ void __stdcall ERF_UI::DrawGeneral() {
         ERF::GetConfig().Save();
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Multiplies the NPCs' gauge gain/loss.");
+
+    int maxR = ERF::GetConfig().maxReactionsPerTrigger.load(std::memory_order_relaxed);
+    ImGui::SetNextItemWidth(200.0f);
+    if (ImGui::InputInt("Max reactions per trigger", &maxR)) {
+        if (maxR < 1) maxR = 1;
+        ERF::GetConfig().maxReactionsPerTrigger.store(maxR, std::memory_order_relaxed);
+        ERF::GetConfig().Save();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("How many reactions can activate at once when the gauge reaches full.");
+    }
 }
 
 void __stdcall ERF_UI::DrawHUD() {

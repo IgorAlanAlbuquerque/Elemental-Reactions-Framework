@@ -51,6 +51,8 @@ public:
     std::optional<ERF_PickBestInfo> pickBestFast(std::span<const std::uint8_t> totals,
                                                  std::span<const ERF_ElementHandle> present, int sumAll,
                                                  float invSumAll) const;
+    void pickBestFastMulti(std::span<const std::uint8_t> totals, std::span<const ERF_ElementHandle> present, int sumAll,
+                           float invSumAll, int maxCount, std::vector<ERF_PickBestInfo>& out) const;
     std::size_t size() const noexcept;
     void freeze();
     bool isFrozen() const noexcept { return _indexed; }
@@ -73,5 +75,6 @@ private:
     static Mask makeMask_(const std::vector<ERF_ElementHandle>& elems);
     static std::optional<ERF_ReactionHandle> pickBest_core(std::span<const std::uint8_t> totals,
                                                            std::span<const ERF_ElementHandle> present, float invSumAll,
-                                                           const ReactionRegistry* self);
+                                                           const ReactionRegistry* self,
+                                                           const std::vector<bool>* used = nullptr);
 };

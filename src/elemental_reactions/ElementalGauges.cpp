@@ -60,7 +60,7 @@ namespace Gauges {
 
     using Map = ankerl::unordered_dense::map<RE::FormID, Entry>;
     inline Map& state() noexcept {
-        static Map m;  // NOSONAR: estado centralizado
+        static Map m;
         if (m.bucket_count() == 0) m.reserve(512);
         return m;
     }
@@ -271,38 +271,153 @@ namespace {
         }
     }
 
-    bool TriggerReaction(RE::Actor* a, Gauges::Entry& e, ERF_ElementHandle elem) {
-        if (!a) return false;
-
-        if (e.sumAll <= 0) return false;
+    static bool TriggerReaction(RE::Actor* a, Gauges::Entry& e, ERF_ElementHandle elem) {
+        if (!a) {
+            return false;
+        }
+        if (e.sumAll <= 0) {
+            return false;
+        }
 
         auto const& RR = ReactionRegistry::get();
 
+        int maxCount = ERF::GetConfig().maxReactionsPerTrigger.load(std::memory_order_relaxed);
+        if (maxCount < 1) {
+            maxCount = 1;
+        }
+
+        std::vector<ERF_PickBestInfo> picks;
+        picks.reserve(static_cast<std::size_t>(maxCount));
+
         if (elem == 0) {
-            const float invSum = 1.0f / static_cast<float>(e.sumAll);
+            const int sum = e.sumAll;
+            if (sum <= 0 || e.presentList.empty()) {
+                return false;
+            }
 
-            auto bestOpt = RR.pickBestFast(e.v, e.presentList, e.sumAll, invSum);
-            if (!bestOpt) return false;
+            const float invSum = 1.0f / static_cast<float>(sum);
 
-            const ERF_ReactionHandle rh = bestOpt->handle;
-            const ERF_ReactionDesc* r = RR.get(rh);
-            if (!r) return false;
+            RR.pickBestFastMulti(e.v, e.presentList, sum, invSum, maxCount, picks);
+            if (picks.empty()) {
+                return false;
+            }
 
             const float nowH = NowHours();
 
-            if (r->clearAllOnTrigger) {
-                for (std::size_t i = Gauges::firstIndex(); i < e.v.size(); ++i) {
-                    e.v[i] = 0;
-                    e.lastHitH[i] = nowH;
-                    e.lastEvalH[i] = nowH;
+            bool clearedAll = false;
+            bool any = false;
+
+            for (const auto& info : picks) {
+                const ERF_ReactionHandle rh = info.handle;
+                if (!rh) {
+                    continue;
                 }
-                e.presentMask = 0;
-                e.presentList.clear();
-                e.sumAll = 0;
-                e.posInList.assign(e.v.size(), 0xFFFF);
+
+                const ERF_ReactionDesc* r = RR.get(rh);
+                if (!r) {
+                    continue;
+                }
+
+                if (r->clearAllOnTrigger && !clearedAll) {
+                    for (std::size_t i = Gauges::firstIndex(); i < e.v.size(); ++i) {
+                        e.v[i] = 0;
+                        e.lastHitH[i] = nowH;
+                        e.lastEvalH[i] = nowH;
+                    }
+                    e.presentMask = 0;
+                    e.presentList.clear();
+                    e.sumAll = 0;
+                    e.posInList.assign(e.v.size(), 0xFFFF);
+                    clearedAll = true;
+                }
+
+                ApplyElementLocksForReaction(e, r->elements, nowH, r->elementLockoutSeconds,
+                                             r->elementLockoutIsRealTime);
+
+                SetReactionCooldown(e, rh, nowH, r->cooldownSeconds, r->cooldownIsRealTime);
+
+                const float durS =
+                    (r->elementLockoutSeconds > 0.f) ? r->elementLockoutSeconds : std::max(0.5f, r->cooldownSeconds);
+                const bool durRT =
+                    (r->elementLockoutSeconds > 0.f) ? r->elementLockoutIsRealTime : r->cooldownIsRealTime;
+
+                InjectHUD::BeginReaction(a, rh, durS, durRT);
+
+                if (r->cb) {
+                    if (auto* tasks = SKSE::GetTaskInterface()) {
+                        RE::ActorHandle h = a->CreateRefHandle();
+                        auto cb = r->cb;
+                        void* user = r->user;
+                        tasks->AddTask([h, cb, user]() {
+                            if (auto actorNi = h.get()) {
+                                if (auto* target = actorNi.get()) {
+                                    ERF_ReactionContext ctx{};
+                                    ctx.target = target;
+                                    cb(ctx, user);
+                                }
+                            }
+                        });
+                    } else {
+                        ERF_ReactionContext ctx{};
+                        ctx.target = a;
+                        r->cb(ctx, r->user);
+                    }
+                }
+
+                any = true;
+            }
+
+            return any;
+        }
+
+        const std::size_t idx = Gauges::idx(elem);
+        const int v = (idx < e.v.size()) ? static_cast<int>(e.v[idx]) : 0;
+        if (v <= 0) {
+            return false;
+        }
+
+        std::vector<std::uint8_t> totals(e.v.size(), 0);
+        totals[idx] = static_cast<std::uint8_t>(v);
+
+        std::vector<ERF_ElementHandle> present;
+        present.reserve(1);
+        present.push_back(elem);
+
+        const int sum = v;
+        const float invSum = 1.0f / static_cast<float>(sum);
+
+        RR.pickBestFastMulti(totals, std::span<const ERF_ElementHandle>(present.data(), present.size()), sum, invSum,
+                             maxCount, picks);
+        if (picks.empty()) {
+            return false;
+        }
+
+        const float nowH = NowHours();
+        const int beforeVal = v;
+        bool clearedElem = false;
+        bool any = false;
+
+        for (const auto& info : picks) {
+            const ERF_ReactionHandle rh = info.handle;
+            if (!rh) {
+                continue;
+            }
+
+            const ERF_ReactionDesc* r = RR.get(rh);
+            if (!r) {
+                continue;
+            }
+
+            if (r->clearAllOnTrigger && !clearedElem) {
+                e.v[idx] = 0;
+                e.lastHitH[idx] = nowH;
+                e.lastEvalH[idx] = nowH;
+                Gauges::onValChange(e, idx, beforeVal, 0);
+                clearedElem = true;
             }
 
             ApplyElementLocksForReaction(e, r->elements, nowH, r->elementLockoutSeconds, r->elementLockoutIsRealTime);
+
             SetReactionCooldown(e, rh, nowH, r->cooldownSeconds, r->cooldownIsRealTime);
 
             const float durS =
@@ -332,68 +447,10 @@ namespace {
                 }
             }
 
-            return true;
+            any = true;
         }
 
-        const std::size_t idx = Gauges::idx(elem);
-        const int v = (idx < e.v.size()) ? static_cast<int>(e.v[idx]) : 0;
-        if (v <= 0) return false;
-
-        std::vector<std::uint8_t> totals(e.v.size(), 0);
-        totals[idx] = static_cast<std::uint8_t>(v);
-
-        std::vector<ERF_ElementHandle> present{elem};
-
-        const int sum = v;
-        const float invSum = 1.0f / static_cast<float>(sum);
-
-        auto bestOpt = RR.pickBestFast(totals, present, sum, invSum);
-        if (!bestOpt) return false;
-
-        const ERF_ReactionHandle rh = bestOpt->handle;
-        const ERF_ReactionDesc* r = RR.get(rh);
-        if (!r) return false;
-
-        const float nowH = NowHours();
-
-        if (r->clearAllOnTrigger) {
-            e.v[idx] = 0;
-            e.lastHitH[idx] = nowH;
-            e.lastEvalH[idx] = nowH;
-            Gauges::onValChange(e, idx, v, 0);
-        }
-
-        ApplyElementLocksForReaction(e, r->elements, nowH, r->elementLockoutSeconds, r->elementLockoutIsRealTime);
-        SetReactionCooldown(e, rh, nowH, r->cooldownSeconds, r->cooldownIsRealTime);
-
-        const float durS =
-            (r->elementLockoutSeconds > 0.f) ? r->elementLockoutSeconds : std::max(0.5f, r->cooldownSeconds);
-        const bool durRT = (r->elementLockoutSeconds > 0.f) ? r->elementLockoutIsRealTime : r->cooldownIsRealTime;
-
-        InjectHUD::BeginReaction(a, rh, durS, durRT);
-
-        if (r->cb) {
-            if (auto* tasks = SKSE::GetTaskInterface()) {
-                RE::ActorHandle h = a->CreateRefHandle();
-                auto cb = r->cb;
-                void* user = r->user;
-                tasks->AddTask([h, cb, user]() {
-                    if (auto actorNi = h.get()) {
-                        if (auto* target = actorNi.get()) {
-                            ERF_ReactionContext ctx{};
-                            ctx.target = target;
-                            cb(ctx, user);
-                        }
-                    }
-                });
-            } else {
-                ERF_ReactionContext ctx{};
-                ctx.target = a;
-                r->cb(ctx, r->user);
-            }
-        }
-
-        return true;
+        return any;
     }
 
     static bool MaybeTriggerPreEffectsFor(RE::Actor* a, Gauges::Entry& e, ERF_ElementHandle elem,
@@ -739,12 +796,10 @@ void ElementalGauges::Add(RE::Actor* a, ERF_ElementHandle elem, int delta) {
     }
 
     if (const bool singleMode = ERF::GetConfig().isSingle.load(std::memory_order_relaxed); singleMode) {
-        // SINGLE
         if (before < 100 && afterI >= 100) {
             TriggerReaction(a, e, elem);
         }
     } else {
-        // MIXED
         if (sumBefore < 100 && e.sumAll >= 100) {
             TriggerReaction(a, e, 0);
         }

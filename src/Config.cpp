@@ -54,6 +54,7 @@ namespace ERF {
         bool sgl = loadBool(ini, "Gauges", "Single", true);
         double pm = loadDouble(ini, "Gauges", "PlayerMult", 1.0);
         double nm = loadDouble(ini, "Gauges", "NpcMult", 1.0);
+        double mrx = loadDouble(ini, "Gauges", "MaxReactionsPerTrigger", 1.0);
         double px = loadDouble(ini, "HUD", "PlayerXPosition", 0.0);
         double py = loadDouble(ini, "HUD", "PlayerYPosition", 0.0);
         double nx = loadDouble(ini, "HUD", "NpcXPosition", 0.0);
@@ -70,6 +71,9 @@ namespace ERF {
         isSingle.store(sgl, std::memory_order_relaxed);
         playerMult.store(static_cast<float>(pm < 0 ? 0 : pm), std::memory_order_relaxed);
         npcMult.store(static_cast<float>(nm < 0 ? 0 : nm), std::memory_order_relaxed);
+        auto mri = static_cast<int>(mrx);
+        if (mri < 1) mri = 1;
+        maxReactionsPerTrigger.store(mri, std::memory_order_relaxed);
         playerXPosition.store(static_cast<float>(px), std::memory_order_relaxed);
         playerYPosition.store(static_cast<float>(py), std::memory_order_relaxed);
         npcXPosition.store(static_cast<float>(nx), std::memory_order_relaxed);
@@ -93,6 +97,8 @@ namespace ERF {
         ini.SetBoolValue("Gauges", "Single", isSingle.load(std::memory_order_relaxed));
         ini.SetDoubleValue("Gauges", "PlayerMult", playerMult.load(std::memory_order_relaxed));
         ini.SetDoubleValue("Gauges", "NpcMult", npcMult.load(std::memory_order_relaxed));
+        ini.SetDoubleValue("Gauges", "MaxReactionsPerTrigger",
+                           static_cast<double>(maxReactionsPerTrigger.load(std::memory_order_relaxed)));
         ini.SetDoubleValue("HUD", "PlayerXPosition", playerXPosition.load(std::memory_order_relaxed));
         ini.SetDoubleValue("HUD", "PlayerYPosition", playerYPosition.load(std::memory_order_relaxed));
         ini.SetDoubleValue("HUD", "NpcXPosition", npcXPosition.load(std::memory_order_relaxed));

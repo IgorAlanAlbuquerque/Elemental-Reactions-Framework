@@ -34,9 +34,29 @@ static ERF_API_V1* AcquireERF() {
 }
 
 // -------------------- Callback de reação (explosão 100%) --------------------
-static void OnReaction(const ERF_ReactionContext& ctx, void* /*user*/) {
+static void OnReactionFire(const ERF_ReactionContext& ctx, void* /*user*/) {
     if (ctx.target) {
-        spdlog::info("[ERF-Test] Reaction fired on actor {:08X}", ctx.target->GetFormID());
+        spdlog::info("[ERF-Test] Reaction fire 1 fired on actor {:08X}", ctx.target->GetFormID());
+    }
+}
+static void OnReactionFireS(const ERF_ReactionContext& ctx, void* /*user*/) {
+    if (ctx.target) {
+        spdlog::info("[ERF-Test] Reaction fire 2 fired on actor {:08X}", ctx.target->GetFormID());
+    }
+}
+static void OnReactionFireT(const ERF_ReactionContext& ctx, void* /*user*/) {
+    if (ctx.target) {
+        spdlog::info("[ERF-Test] Reaction fire 3 fired on actor {:08X}", ctx.target->GetFormID());
+    }
+}
+static void OnReactionFrost(const ERF_ReactionContext& ctx, void* /*user*/) {
+    if (ctx.target) {
+        spdlog::info("[ERF-Test] Reaction frost fired on actor {:08X}", ctx.target->GetFormID());
+    }
+}
+static void OnReactionShock(const ERF_ReactionContext& ctx, void* /*user*/) {
+    if (ctx.target) {
+        spdlog::info("[ERF-Test] Reaction shock fired on actor {:08X}", ctx.target->GetFormID());
     }
 }
 
@@ -157,10 +177,48 @@ static void RegisterEverything_Core() {
         rF.elementLockoutIsRealTime = true;
         rF.clearAllOnTrigger = true;
         rF.hudTint = 0xF04A3A;
-        rF.cb = &OnReaction;
+        rF.cb = &OnReactionFire;
         rF.user = nullptr;
         rF.iconName = "ERF_ICON__erf_core__fire";
         api->RegisterReaction(rF);
+
+        ERF_ElementHandle elemsFireS[] = {fire};
+        ERF_ReactionDesc_Public rFs{};
+        rFs.name = "Solo_Fire_90";
+        rFs.elements = elemsFireS;
+        rFs.elementCount = 1;
+        rFs.ordered = false;
+        rFs.minPctEach = 0.9f;
+        rFs.minSumSelected = 0.0f;
+        rFs.cooldownSeconds = 0.5f;
+        rFs.cooldownIsRealTime = true;
+        rFs.elementLockoutSeconds = 10.0f;
+        rFs.elementLockoutIsRealTime = true;
+        rFs.clearAllOnTrigger = true;
+        rFs.hudTint = 0xF04A3A;
+        rFs.cb = &OnReactionFireS;
+        rFs.user = nullptr;
+        rFs.iconName = "ERF_ICON__erf_core__fire";
+        api->RegisterReaction(rFs);
+
+        ERF_ElementHandle elemsFireT[] = {fire};
+        ERF_ReactionDesc_Public rFt{};
+        rFt.name = "Solo_Fire_80";
+        rFt.elements = elemsFireT;
+        rFt.elementCount = 1;
+        rFt.ordered = false;
+        rFt.minPctEach = 0.80f;
+        rFt.minSumSelected = 0.0f;
+        rFt.cooldownSeconds = 0.5f;
+        rFt.cooldownIsRealTime = true;
+        rFt.elementLockoutSeconds = 10.0f;
+        rFt.elementLockoutIsRealTime = true;
+        rFt.clearAllOnTrigger = true;
+        rFt.hudTint = 0xF04A3A;
+        rFt.cb = &OnReactionFireT;
+        rFt.user = nullptr;
+        rFt.iconName = "ERF_ICON__erf_core__fire";
+        api->RegisterReaction(rFt);
 
         // --- Frost ---
         ERF_ElementHandle elemsFrost[] = {frost};
@@ -177,7 +235,7 @@ static void RegisterEverything_Core() {
         rFr.elementLockoutIsRealTime = true;
         rFr.clearAllOnTrigger = true;
         rFr.hudTint = 0x4FB2FF;
-        rFr.cb = &OnReaction;
+        rFr.cb = &OnReactionFrost;
         rFr.user = nullptr;
         rFr.iconName = "ERF_ICON__erf_core__frost";
         api->RegisterReaction(rFr);
@@ -197,7 +255,7 @@ static void RegisterEverything_Core() {
         rS.elementLockoutIsRealTime = true;
         rS.clearAllOnTrigger = true;
         rS.hudTint = 0xFFD02A;
-        rS.cb = &OnReaction;
+        rS.cb = &OnReactionShock;
         rS.user = nullptr;
         rS.iconName = "ERF_ICON__erf_core__shock";
         api->RegisterReaction(rS);
