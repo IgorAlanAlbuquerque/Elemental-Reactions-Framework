@@ -86,7 +86,8 @@ void ReactionRegistry::freeze() { buildIndex_(); }
 
 std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(std::span<const std::uint8_t> totals,
                                                                   std::span<const ERF_ElementHandle> present,
-                                                                  float invSumAll, const ReactionRegistry* self) {
+                                                                  float invSumAll, const ReactionRegistry* self,
+                                                                  const std::vector<bool>* used) {
     self->buildIndex_();
 
     ReactionRegistry::Mask presentMask = 0;
@@ -115,6 +116,10 @@ std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(std::span<cons
 
         const auto& bucket = itB->second;
         for (ERF_ReactionHandle h : bucket) {
+            if (used && h < used->size() && (*used)[h]) {
+                continue;
+            }
+
             const auto& r = self->_reactions[h];
 
             int sumSel = 0;
@@ -182,4 +187,33 @@ std::optional<ERF_PickBestInfo> ReactionRegistry::pickBestFast(std::span<const s
     info.colorRGB = d->Tint;
     info.icon = d->iconName.empty() ? nullptr : d->iconName.c_str();
     return info;
+}
+
+void ReactionRegistry::pickBestFastMulti(std::span<const std::uint8_t> totals,
+                                         std::span<const ERF_ElementHandle> present, int sumAll, float invSumAll,
+                                         int maxCount, std::vector<ERF_PickBestInfo>& out) const {
+    out.clear();
+    if (sumAll <= 0 || maxCount <= 0) return;
+
+    std::vector<bool> used(_reactions.size(), false);
+
+    while (maxCount-- > 0) {
+        auto rh = pickBest_core(totals, present, invSumAll, this, &used);
+        if (!rh) break;
+
+        const ERF_ReactionDesc* d = get(*rh);
+
+        if (*rh < used.size()) {
+            used[*rh] = true;
+        }
+
+        if (!d) continue;
+
+        ERF_PickBestInfo info;
+        info.handle = *rh;
+        info.colorRGB = d->Tint;
+        info.icon = d->iconName.empty() ? nullptr : d->iconName.c_str();
+
+        out.push_back(info);
+    }
 }
