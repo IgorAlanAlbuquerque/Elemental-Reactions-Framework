@@ -185,7 +185,7 @@ namespace Gauges {
         const auto decI = static_cast<int>(decF);
         if (decI <= 0) return;
 
-        const int before = static_cast<int>(val);
+        const auto before = static_cast<int>(val);
         int next = before - decI;
         if (next < 0) next = 0;
         val = static_cast<std::uint8_t>(next);
@@ -564,31 +564,22 @@ namespace {
     }
 
     inline void RecomputeEffMultipliers(RE::Actor* a, Gauges::Entry& e) {
-        auto& ER = ElementRegistry::get();
-
         const auto begin = Gauges::firstIndex();
         const auto n = e.v.size();
 
         std::fill(e.effMult.begin() + begin, e.effMult.begin() + n, 1.0);
 
-        const auto active = ElementalStates::GetActive(a);
-        if (active.empty()) {
+        if (!a) {
             e.effDirty = false;
             return;
         }
 
         for (std::size_t i = begin; i < n; ++i) {
-            const Elem h = static_cast<Elem>(i);
-            if (const ERF_ElementDesc* ed = ER.get(h)) {
-                for (ERF_StateHandle sh : active) {
-                    if (sh == 0) continue;
-                    const auto si = static_cast<std::size_t>(sh);
-                    if (si < ed->stateMultDense.size()) {
-                        e.effMult[i] *= ed->stateMultDense[si];
-                    }
-                }
-            }
+            const auto elem = static_cast<ERF_ElementHandle>(i);
+            const double m = ElementalStates::GetGaugeMultiplierFor(a, elem);
+            e.effMult[i] = m;
         }
+
         e.effDirty = false;
     }
 
@@ -1004,7 +995,7 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
         return std::nullopt;
     }
 
-    auto& RR = ReactionRegistry::get();
+    auto const& RR = ReactionRegistry::get();
     if (const bool singleMode = ERF::GetConfig().isSingle.load(std::memory_order_relaxed); singleMode) {
         TL_accumIcons.reserve(TL_vals32.size());
         thread_local std::vector<std::uint8_t> TL_totals;

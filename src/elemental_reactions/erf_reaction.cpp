@@ -4,13 +4,37 @@
 #include <cassert>
 #include <numeric>
 
-#include "../common/Helpers.h"
-
 namespace {
-    static int valueForHandle(std::span<const std::uint8_t> totals, ERF_ElementHandle h) {
+    int valueForHandle(std::span<const std::uint8_t> totals, ERF_ElementHandle h) {
         if (h == 0) return 0;
-        const std::size_t idx = static_cast<std::size_t>(h);
+        const auto idx = static_cast<std::size_t>(h);
         return (idx < totals.size()) ? totals[idx] : 0;
+    }
+    constexpr float EPS = 1e-6f;
+
+    bool isReactionUsed(const std::vector<bool>* used, ERF_ReactionHandle h) {
+        return used && h < used->size() && (*used)[h];
+    }
+
+    bool isBetterCandidate(ERF_ReactionHandle h, float fracSel, std::size_t k, ERF_ReactionHandle bestH,
+                           float bestScore, std::size_t bestK) {
+        if (fracSel > bestScore) {
+            return true;
+        }
+
+        if (const bool tieScore = std::abs(fracSel - bestScore) < EPS; !tieScore) {
+            return false;
+        }
+
+        if (k > bestK) {
+            return true;
+        }
+
+        if (k < bestK) {
+            return false;
+        }
+
+        return h < bestH;
     }
 }
 
@@ -20,7 +44,9 @@ ReactionRegistry& ReactionRegistry::get() {
     return R;
 }
 
-ERF_ReactionHandle ReactionRegistry::registerReaction(const ERF_ReactionDesc& d) {
+ERF_ReactionHandle
+ReactionRegistry::registerReaction(  // NOSONAR - this method intentionally mutates the reaction registry state
+    const ERF_ReactionDesc& d) {
     auto& R = get();
     if (R._reactions.empty()) R._reactions.resize(1);
     R._reactions.push_back(d);
@@ -33,7 +59,7 @@ const ERF_ReactionDesc* ReactionRegistry::get(ERF_ReactionHandle h) const {
     return &_reactions[h];
 }
 
-std::size_t ReactionRegistry::size() const noexcept { return (_reactions.size() > 0) ? (_reactions.size() - 1) : 0; }
+std::size_t ReactionRegistry::size() const noexcept { return (!_reactions.empty()) ? (_reactions.size() - 1) : 0; }
 
 ReactionRegistry::Mask ReactionRegistry::makeMask_(const std::vector<ERF_ElementHandle>& elems) {
     Mask m = 0;
@@ -82,7 +108,84 @@ void ReactionRegistry::buildIndex_() const {
     _indexed = true;
 }
 
-void ReactionRegistry::freeze() { buildIndex_(); }
+void ReactionRegistry::freeze() { buildIndex_(); }  // NOSONAR - freeze() intentionally mutates the registry state
+
+bool ReactionRegistry::checkEachElementPct(ERF_ReactionHandle h, const ERF_ReactionDesc& r,
+                                           std::span<const std::uint8_t> totals, float invSumAll,
+                                           int& outSumSel) const {
+    outSumSel = 0;
+    const float req = _minPctEachByH[h];
+
+    if (req <= 0.0f) {
+        for (auto eh : r.elements) {
+            const int v = valueForHandle(totals, eh);
+            outSumSel += v;
+        }
+        return true;
+    }
+
+    for (auto eh : r.elements) {
+        const int v = valueForHandle(totals, eh);
+        outSumSel += v;
+
+        const float p = static_cast<float>(v) * invSumAll;
+        if (p + EPS < req) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool ReactionRegistry::checkMinSumSel(ERF_ReactionHandle h, int sumSel, float invSumAll, float& fracSelOut) const {
+    const float fracSel = static_cast<float>(sumSel) * invSumAll;
+    fracSelOut = fracSel;
+
+    if (const float minReq = _minSumSelByH[h]; minReq > 0.0f && fracSel + EPS < minReq) {
+        return false;
+    }
+    return true;
+}
+
+void ReactionRegistry::evalBucketForPickBest(Mask m, std::span<const std::uint8_t> totals, float invSumAll,
+                                             const std::vector<bool>* used, ERF_ReactionHandle& bestH, float& bestScore,
+                                             std::size_t& bestK) const {
+    auto itB = _byMask.find(m);
+    if (itB == _byMask.end()) {
+        return;
+    }
+
+    const auto& bucket = itB->second;
+    for (ERF_ReactionHandle h : bucket) {
+        if (isReactionUsed(used, h)) {
+            continue;
+        }
+
+        const auto& r = _reactions[h];
+
+        int sumSel = 0;
+        if (!checkEachElementPct(h, r, totals, invSumAll, sumSel)) {
+            continue;
+        }
+
+        float fracSel = 0.0f;
+        if (!checkMinSumSel(h, sumSel, invSumAll, fracSel)) {
+            continue;
+        }
+
+        const std::size_t k = _kByH[h];
+        if (!isBetterCandidate(h, fracSel, k, bestH, bestScore, bestK)) {
+            continue;
+        }
+
+        bestScore = fracSel;
+        bestK = k;
+        bestH = h;
+
+        if (bestScore >= 1.0f - EPS) {
+            return;
+        }
+    }
+}
 
 std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(std::span<const std::uint8_t> totals,
                                                                   std::span<const ERF_ElementHandle> present,
@@ -90,80 +193,25 @@ std::optional<ERF_ReactionHandle> ReactionRegistry::pickBest_core(std::span<cons
                                                                   const std::vector<bool>* used) {
     self->buildIndex_();
 
-    ReactionRegistry::Mask presentMask = 0;
+    Mask presentMask = 0;
     for (auto h : present) {
         if (!h) continue;
-        const unsigned bit = static_cast<unsigned>(h - 1);
-        if (bit < 64) presentMask |= (ReactionRegistry::Mask(1) << bit);
+        const auto bit = static_cast<unsigned>(h - 1);
+        if (bit < 64) presentMask |= (Mask(1) << bit);
     }
     if (!presentMask) return std::nullopt;
-
-    auto popcount64 = [](ReactionRegistry::Mask m) -> int {
-#if defined(_MSC_VER)
-        return static_cast<int>(__popcnt64(m));
-#else
-        return __builtin_popcountll(m);
-#endif
-    };
 
     ERF_ReactionHandle bestH = 0;
     float bestScore = 0.0f;
     std::size_t bestK = 0;
 
-    auto evalBucket = [&](ReactionRegistry::Mask m) {
-        auto itB = self->_byMask.find(m);
-        if (itB == self->_byMask.end()) return;
-
-        const auto& bucket = itB->second;
-        for (ERF_ReactionHandle h : bucket) {
-            if (used && h < used->size() && (*used)[h]) {
-                continue;
-            }
-
-            const auto& r = self->_reactions[h];
-
-            int sumSel = 0;
-            bool okPctEach = true;
-
-            for (auto eh : r.elements) {
-                const int v = valueForHandle(totals, eh);
-                sumSel += v;
-
-                const float req = self->_minPctEachByH[h];
-                if (req > 0.0f) {
-                    const float p = static_cast<float>(v) * invSumAll;
-                    if (p + 1e-6f < req) {
-                        okPctEach = false;
-                        break;
-                    }
-                }
-            }
-            if (!okPctEach) continue;
-
-            const float fracSel = static_cast<float>(sumSel) * invSumAll;
-            if (self->_minSumSelByH[h] > 0.0f && fracSel + 1e-6f < self->_minSumSelByH[h]) continue;
-
-            const std::size_t k = self->_kByH[h];
-            const bool better = (fracSel > bestScore) || ((std::abs(fracSel - bestScore) < 1e-6f) && (k > bestK)) ||
-                                ((std::abs(fracSel - bestScore) < 1e-6f) && (k == bestK) && (h < bestH));
-
-            if (better) {
-                bestScore = fracSel;
-                bestK = k;
-                bestH = h;
-
-                if (bestScore >= 1.0f - 1e-6f) return;
-            }
-        }
-    };
-
-    evalBucket(presentMask);
+    self->evalBucketForPickBest(presentMask, totals, invSumAll, used, bestH, bestScore, bestK);
     if (bestH != 0 && bestScore >= 1.0f - 1e-6f) return bestH;
 
     for (auto sub = presentMask; sub; sub = (sub - 1) & presentMask) {
         if (sub == presentMask) continue;
 
-        evalBucket(sub);
+        self->evalBucketForPickBest(sub, totals, invSumAll, used, bestH, bestScore, bestK);
         if (bestH != 0 && bestScore >= 1.0f - 1e-6f) break;
     }
 
@@ -177,7 +225,7 @@ std::optional<ERF_PickBestInfo> ReactionRegistry::pickBestFast(std::span<const s
     if (sumAll <= 0) return std::nullopt;
 
     auto rh = pickBest_core(totals, present, invSumAll, this);
-    if (!rh) return std::nullopt;
+    if (!rh.has_value()) return std::nullopt;
 
     const ERF_ReactionDesc* d = get(*rh);
     if (!d) return std::nullopt;
@@ -199,7 +247,7 @@ void ReactionRegistry::pickBestFastMulti(std::span<const std::uint8_t> totals,
 
     while (maxCount-- > 0) {
         auto rh = pickBest_core(totals, present, invSumAll, this, &used);
-        if (!rh) break;
+        if (!rh.has_value()) break;
 
         const ERF_ReactionDesc* d = get(*rh);
 

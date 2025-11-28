@@ -23,6 +23,8 @@
 // -------------------- Guarda da API --------------------
 static ERF_API_V1* g_erf = nullptr;
 
+static ERF_StateHandle g_stateWet{};
+
 static ERF_API_V1* AcquireERF() {
     if (g_erf) return g_erf;
 
@@ -113,32 +115,17 @@ static void RegisterEverything_Core() {
     }
 
     // 2) Estados
-    ERF_StateHandle wet{}, rubber{}, fur{};
+    ERF_StateHandle wet{};
     {
         ERF_StateDesc_Public s{"Wet", 0};
         wet = api->RegisterState(s);
-    }
-    {
-        ERF_StateDesc_Public s{"Rubber", 0};
-        rubber = api->RegisterState(s);
-    }
-    {
-        ERF_StateDesc_Public s{"Fur", 0};
-        fur = api->RegisterState(s);
+        g_stateWet = wet;
     }
 
     // 3) Multiplicadores estado×elemento
-    api->SetElementStateMultiplier(fire, wet, 0.10);
-    api->SetElementStateMultiplier(fire, fur, 1.30);
-    api->SetElementStateMultiplier(fire, rubber, 1.30);
-
-    api->SetElementStateMultiplier(frost, fur, 0.10);
-    api->SetElementStateMultiplier(frost, wet, 1.30);
-    api->SetElementStateMultiplier(frost, rubber, 1.30);
-
-    api->SetElementStateMultiplier(shock, rubber, 0.10);
-    api->SetElementStateMultiplier(shock, wet, 1.30);
-    api->SetElementStateMultiplier(shock, fur, 1.30);
+    api->SetElementStateMultiplier(fire, wet, 0.10, 0.10);
+    api->SetElementStateMultiplier(frost, wet, 1.30, 1.0);
+    api->SetElementStateMultiplier(shock, wet, 1.9, 1.30);
 
     // 4) Pré-efeito: Shock Slow (≥50, 10% em 50, +1%/pt, cap 60%)
     {
@@ -296,6 +283,47 @@ static void RegisterEverything_WithWindow() {
     }
 }
 
+class SneakInputSink : public RE::BSTEventSink<RE::InputEvent*> {
+public:
+    static SneakInputSink* GetSingleton() {
+        static SneakInputSink s;
+        return std::addressof(s);
+    }
+
+    RE::BSEventNotifyControl ProcessEvent(RE::InputEvent* const*, RE::BSTEventSource<RE::InputEvent*>*) override {
+        auto* api = g_erf;
+        if (!api || g_stateWet == 0) {
+            return RE::BSEventNotifyControl::kContinue;
+        }
+
+        auto* pc = RE::PlayerCharacter::GetSingleton();
+        if (!pc) {
+            return RE::BSEventNotifyControl::kContinue;
+        }
+
+        static bool s_wasSneaking = pc->IsSneaking();
+        const bool nowSneaking = pc->IsSneaking();
+
+        if (nowSneaking != s_wasSneaking) {
+            s_wasSneaking = nowSneaking;
+
+            if (nowSneaking) {
+                if (api->ActivateState) {
+                    api->ActivateState(pc, g_stateWet);
+                    spdlog::info("[ERF-Test] Sneak ON → Wet state ACTIVATED.");
+                }
+            } else {
+                if (api->DeactivateState) {
+                    api->DeactivateState(pc, g_stateWet);
+                    spdlog::info("[ERF-Test] Sneak OFF → Wet state DEACTIVATED.");
+                }
+            }
+        }
+
+        return RE::BSEventNotifyControl::kContinue;
+    }
+};
+
 // -------------------- Mensageria SKSE (apenas ciclo de vida) --------------------
 static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg) {
     if (!msg) return;
@@ -306,6 +334,12 @@ static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg) {
     if (msg->type == SKSE::MessagingInterface::kDataLoaded) {
         if (!g_erf) AcquireERF();
         RegisterEverything_WithWindow();
+    }
+    if (msg->type == SKSE::MessagingInterface::kPostLoadGame) {
+        auto* inputMgr = RE::BSInputDeviceManager::GetSingleton();
+        if (inputMgr) {
+            inputMgr->AddEventSink(SneakInputSink::GetSingleton());
+        }
     }
 }
 

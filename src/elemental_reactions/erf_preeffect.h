@@ -40,7 +40,7 @@ public:
 
     void freeze();
     bool isFrozen() const noexcept { return _frozen; }
-    std::size_t size() const noexcept { return (_effects.size() > 0) ? (_effects.size() - 1) : 0; }
+    std::size_t size() const noexcept { return (!_effects.empty()) ? (_effects.size() - 1) : 0; }
 
 private:
     PreEffectRegistry() = default;

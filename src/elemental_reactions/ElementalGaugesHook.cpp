@@ -17,7 +17,7 @@
 #include "../common/Helpers.h"
 #include "../hud/HUDTick.h"
 #include "ElementalGauges.h"
-#include "RE/P/PeakValueModifierEffect.h"
+#include "ElementalStates.h"
 #include "erf_element.h"
 
 using namespace std::chrono;
@@ -73,17 +73,16 @@ namespace {
 namespace GaugesHook {
     using Elem = ERF_ElementHandle;
 
-    static StripedMap<std::uint64_t, double, 64> g_lastAccHint;
-    static StripedMap<std::uint64_t, std::uint16_t, 64> g_lastAccCarrierUID;
-
     struct EffCtx {
         RE::ActorHandle target;
         std::vector<Elem> elems;
         std::uint16_t uid;
     };
 
+    static StripedMap<std::uint64_t, double, 64> g_lastAccHint;
+    static StripedMap<std::uint64_t, std::uint16_t, 64> g_lastAccCarrierUID;
+    static StripedMap<const RE::ActiveEffect*, float, 64> g_baseHealthMag;
     static StripedMap<const RE::ActiveEffect*, EffCtx, 64> g_ctx;
-
     static StripedMap<std::uint64_t, double, 64> g_accum;
 
     static std::uint64_t KeyActorOnly(const RE::Actor* a) noexcept {
@@ -110,7 +109,7 @@ namespace GaugesHook {
         if (!mgef || IsGaugeAccCarrier(mgef)) return out;
 
         const auto kws = mgef->GetKeywords();
-        for (RE::BGSKeyword* kw : kws) {
+        for (RE::BGSKeyword const* kw : kws) {
             if (!kw) continue;
             if (auto h = ElementRegistry::get().findByKeyword(kw)) {
                 if (std::find(out.begin(), out.end(), *h) == out.end()) {
@@ -122,8 +121,8 @@ namespace GaugesHook {
     }
 
     static std::uint64_t MakeKey(const RE::Actor* a, Elem e) {
-        const std::uint64_t hi = static_cast<std::uint64_t>(a ? a->GetFormID() : 0);
-        const std::uint64_t lo = static_cast<std::uint64_t>(e);
+        const auto hi = static_cast<std::uint64_t>(a ? a->GetFormID() : 0);
+        const auto lo = static_cast<std::uint64_t>(e);
         return (hi << 32) | lo;
     }
 
@@ -143,18 +142,21 @@ namespace GaugesHook {
 
             if (!e->isApplied) {
                 g_ctx.erase_if([&](auto& kv) {
+                    const auto* ae = kv.first;
                     const auto& ctx = kv.second;
                     if (ctx.uid != uid) return false;
                     if (tgt) {
                         const RE::Actor* a = ctx.target.get().get();
                         if (!a || a != tgt) return false;
                     }
+
+                    g_baseHealthMag.erase(ae);
                     return true;
                 });
 
                 if (tgt) {
                     const auto key = KeyActorOnly(tgt);
-                    const auto removedUID = static_cast<std::uint16_t>(uid);
+                    const auto removedUID = uid;
                     if (auto carrierUID = g_lastAccCarrierUID.get(key); carrierUID && *carrierUID == removedUID) {
                         g_lastAccHint.erase(key);
                         g_lastAccCarrierUID.erase(key);
@@ -185,12 +187,32 @@ namespace GaugesHook {
         }
 
         static void thunk(T* self, RE::MagicTarget* mt) {
+            if (!IsDisabled() && self) {
+                const RE::EffectSetting* mgefPre = self->GetBaseObject();
+                RE::Actor* actorPre = AsActor(self->target);
+                if (mgefPre && actorPre && !IsGaugeAccCarrier(mgefPre)) {
+                    if (auto elemsPre = ClassifyElements(mgefPre); !elemsPre.empty()) {
+                        if (mgefPre->data.primaryAV == RE::ActorValue::kHealth &&
+                            mgefPre->data.flags.any(RE::EffectSetting::EffectSettingData::Flag::kDetrimental) &&
+                            IsInstantaneous(mgefPre, self)) {
+                            double healthMult = 1.0;
+                            for (auto elem : elemsPre) {
+                                if (!elem) continue;
+                                healthMult *= ElementalStates::GetHealthMultiplierFor(actorPre, elem);
+                            }
+
+                            if (std::abs(healthMult - 1.0) > 1e-6) {
+                                self->magnitude *= static_cast<float>(healthMult);
+                            }
+                        }
+                    }
+                }
+            }
             _orig(self, mt);
 
             if (IsDisabled()) return;
 
             const RE::EffectSetting* mgef = self ? self->GetBaseObject() : nullptr;
-
             RE::Actor* actor = AsActor(self ? self->target : nullptr);
             if (!mgef || !actor) return;
 
@@ -277,6 +299,36 @@ namespace GaugesHook {
                 return;
             }
 
+            if (mgef && mgef->data.primaryAV == RE::ActorValue::kHealth &&
+                mgef->data.flags.any(RE::EffectSetting::EffectSettingData::Flag::kDetrimental)) {
+                const bool noDurationFlag =
+                    mgef->data.flags.any(RE::EffectSetting::EffectSettingData::Flag::kNoDuration);
+                const bool zeroDur = (self && self->duration <= 0.01f);
+                const bool isInstant = noDurationFlag || zeroDur;
+
+                if (!isInstant) {
+                    float baseMag = self->magnitude;
+                    g_baseHealthMag.upsert(self, [&](auto& mp) {
+                        auto it = mp.find(self);
+                        if (it == mp.end()) {
+                            mp[self] = baseMag;
+                        } else {
+                            baseMag = it->second;
+                        }
+                    });
+
+                    double healthMult = 1.0;
+                    for (auto elem : elems) {
+                        if (elem == 0) {
+                            continue;
+                        }
+                        healthMult *= ElementalStates::GetHealthMultiplierFor(target, elem);
+                    }
+
+                    self->magnitude = baseMag * static_cast<float>(healthMult);
+                }
+            }
+
             const double accPerSec = g_lastAccHint.get(KeyActorOnly(target)).value_or(0.0);
             if (accPerSec <= 0.001) {
                 _orig(self, dt);
@@ -294,7 +346,7 @@ namespace GaugesHook {
                         double& acc = mp[key];
                         if (mp.size() == 1) mp.reserve(64);
                         acc += accPerSec * static_cast<double>(dt);
-                        const int whole = static_cast<int>(std::floor(acc));
+                        const auto whole = static_cast<int>(std::floor(acc));
                         if (whole >= 1) {
                             inc = whole;
                             acc -= whole;

@@ -14,7 +14,7 @@ namespace RE {
 }
 
 // ===================== Versão da interface =====================
-inline constexpr std::uint32_t ERF_API_VERSION = 1;
+inline constexpr std::uint32_t ERF_API_VERSION = 2;
 
 // ===================== Handles públicos =====================
 using ERF_ElementHandle = std::uint16_t;
@@ -89,7 +89,8 @@ struct ERF_API_V1 {
     ERF_StateHandle (*RegisterState)(const ERF_StateDesc_Public&);
 
     // 2) Multiplicadores
-    void (*SetElementStateMultiplier)(ERF_ElementHandle, ERF_StateHandle, double);
+    void (*SetElementStateMultiplier)(ERF_ElementHandle elem, ERF_StateHandle state, double gaugeMult,
+                                      double healthMult);
 
     // 3) Estados dinâmicos
     bool (*ActivateState)(RE::Actor*, ERF_StateHandle);

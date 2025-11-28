@@ -95,10 +95,17 @@ static ERF_StateHandle API_RegisterState(const ERF_StateDesc_Public& d) noexcept
     return StateRegistry::get().registerState(in);
 }
 
-static void API_SetElementStateMultiplier(ERF_ElementHandle elem, ERF_StateHandle state, double mult) noexcept {
-    if (auto* e = ElementRegistry::get().get(elem)) {
-        const_cast<ERF_ElementDesc*>(e)->setMultiplierForState(state, mult);
+static void API_SetElementStateMultiplier(ERF_ElementHandle elem, ERF_StateHandle state, double gaugeMult,
+                                          double healthMult) noexcept {
+    if (elem == 0 || state == 0) {
+        return;
     }
+
+    if (!ElementRegistry::get().get(elem)) {
+        return;
+    }
+
+    StateRegistry::get().setElementMultipliers(state, elem, gaugeMult, healthMult);
 }
 
 static bool API_ActivateState(RE::Actor* actor, ERF_StateHandle state) noexcept {
