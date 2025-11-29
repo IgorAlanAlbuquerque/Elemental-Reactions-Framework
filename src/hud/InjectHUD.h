@@ -100,7 +100,8 @@ namespace InjectHUD {
 
         void SetAll(const std::vector<double>& comboRemain01, const std::vector<std::uint32_t>& comboTintsRGB,
                     const std::vector<double>& accumValues, const std::vector<std::uint32_t>& accumColorsRGB,
-                    const std::vector<const char*>& iconNames, bool isSingle, bool isHorizontal, float spacingPx);
+                    const std::vector<const char*>& iconNames, bool isSingle, bool isHorizontal, float spacingPx,
+                    std::uint32_t singlesBefore, std::uint32_t singlesAfter);
 
         void ResetSmoothing() { _lastX = _lastY = std::numeric_limits<double>::quiet_NaN(); }
         void ClearAndHide(bool isSingle, bool isHorizontal, float spacingPx);
@@ -116,6 +117,8 @@ namespace InjectHUD {
         RE::GFxValue _isSingle;
         RE::GFxValue _isHorin;
         RE::GFxValue _spacing;
+        RE::GFxValue _singlesBefore;
+        RE::GFxValue _singlesAfter;
 
         std::uint64_t _hComboRemain{0};
         std::uint64_t _hComboTints{0};
@@ -127,7 +130,7 @@ namespace InjectHUD {
         bool _lastIsHor{true};
         float _lastSpacing{std::numeric_limits<float>::quiet_NaN()};
 
-        RE::GFxValue _args[8];
+        RE::GFxValue _args[10];
 
         void EnsureArrays();
         bool FillArrayNames(RE::GFxValue& arr, const std::vector<const char*>& names, std::uint64_t& lastHash);

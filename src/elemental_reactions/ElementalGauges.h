@@ -15,17 +15,16 @@
 namespace ElementalGauges {
     struct HudGaugeBundle {
         std::span<const char* const> icons;
-
         std::span<const std::uint32_t> values;
         std::span<const std::uint32_t> colors;
+        std::uint32_t singlesBefore{0};
+        std::uint32_t singlesAfter{0};
     };
 
     struct TotalsView {
         std::span<const std::uint8_t> values;
         bool any() const {
-            for (auto v : values)
-                if (v > 0) return true;
-            return false;
+            return std::ranges::any_of(values, [](auto v) { return v > 0; });
         }
         std::uint32_t sum() const {
             std::uint32_t s = 0;

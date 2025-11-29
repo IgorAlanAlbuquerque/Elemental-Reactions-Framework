@@ -22,8 +22,6 @@
 
 using namespace std::chrono;
 
-RE::EffectSetting* ElementalGaugesHook::g_mgefGaugeAcc = nullptr;
-
 namespace {
     template <class K, class V, std::size_t N = 64>
     struct StripedMap {
@@ -98,10 +96,8 @@ namespace GaugesHook {
     static bool IsGaugeAccCarrier(const RE::EffectSetting* mgef) {
         if (!mgef) return false;
 
-        if (ElementalGaugesHook::g_mgefGaugeAcc && mgef == ElementalGaugesHook::g_mgefGaugeAcc) {
-            return true;
-        }
-        return false;
+        auto* carrier = ElementalGaugesHook::GaugeAccEffect();
+        return carrier && (mgef == carrier);
     }
 
     static std::vector<Elem> ClassifyElements(const RE::EffectSetting* mgef) {
@@ -395,8 +391,7 @@ namespace HookThread {
     static std::atomic_bool g_monitorRunning{false};
 
     static void EnsureWatchdog() {
-        bool expected = false;
-        if (!g_monitorRunning.compare_exchange_strong(expected, true)) return;
+        if (bool expected = false; !g_monitorRunning.compare_exchange_strong(expected, true)) return;
 
         std::thread([] {
             const auto timeout = 15s;
@@ -414,13 +409,22 @@ namespace HookThread {
     }
 }
 
-std::atomic_bool ElementalGaugesHook::ALLOW_HUD_TICK{false};
+std::atomic_bool& ElementalGaugesHook::AllowHudTickFlag() noexcept {
+    static std::atomic_bool flag{false};
+    return flag;
+}
+
+RE::EffectSetting*& ElementalGaugesHook::GaugeAccEffect() noexcept {
+    static RE::EffectSetting* mgef = nullptr;
+    return mgef;
+}
 
 void ElementalGaugesHook::StartHUDTick() {
     if (!ERF::GetConfig().hudEnabled.load(std::memory_order_relaxed)) {
         return;
     }
-    if (!ALLOW_HUD_TICK.load(std::memory_order_acquire)) return;
+    if (!AllowHudTickFlag().load(std::memory_order_acquire)) return;
+
     const auto now = duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
     HookThread::g_lastHookMs.store(now, std::memory_order_relaxed);
     HUD::StartHUDTick();
@@ -437,9 +441,10 @@ void ElementalGaugesHook::InitCarrierRefs() {
     constexpr std::uint32_t kMgefLocalID = 0x0000C804;
 
     auto* dh = RE::TESDataHandler::GetSingleton();
+    auto*& mgefGaugeAcc = GaugeAccEffect();
 
-    g_mgefGaugeAcc = dh ? dh->LookupForm<RE::EffectSetting>(kMgefLocalID, kPlugin) : nullptr;
-    if (!g_mgefGaugeAcc) {
-        g_mgefGaugeAcc = LookupMGEF("ERF_GaugeAccEffect");
+    mgefGaugeAcc = dh ? dh->LookupForm<RE::EffectSetting>(kMgefLocalID, kPlugin) : nullptr;
+    if (!mgefGaugeAcc) {
+        mgefGaugeAcc = LookupMGEF("ERF_GaugeAccEffect");
     }
 }

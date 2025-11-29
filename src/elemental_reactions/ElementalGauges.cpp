@@ -55,6 +55,7 @@ namespace Gauges {
         std::uint64_t presentMask = 0;
         std::vector<ERF_ElementHandle> presentList;
         int sumAll = 0;
+        int sumMix = 0;
         std::vector<std::uint16_t> posInList;
     };
 
@@ -101,6 +102,7 @@ namespace Gauges {
         e.presentMask = 0;
         e.presentList.clear();
         e.sumAll = 0;
+        e.sumMix = 0;
         e.posInList.assign(nE, 0xFFFF);
     }
 
@@ -147,8 +149,28 @@ namespace Gauges {
     }
     inline void onValChange(Entry& e, std::size_t i, int before, int after) {
         if (i < firstIndex()) return;
-        e.sumAll += (after - before);
+
+        const int delta = after - before;
+
+        e.sumAll += delta;
         if (e.sumAll < 0) e.sumAll = 0;
+
+        if (delta != 0) {
+            const ERF_ElementHandle h = handleFromIndex(i);
+            if (h != 0) {
+                auto const& ER = ElementRegistry::get();
+                if (const ERF_ElementDesc* d = ER.get(h)) {
+                    if (!d->noMixInMixedMode) {
+                        e.sumMix += delta;
+                        if (e.sumMix < 0) e.sumMix = 0;
+                    }
+                } else {
+                    e.sumMix += delta;
+                    if (e.sumMix < 0) e.sumMix = 0;
+                }
+            }
+        }
+
         const bool was = (before > 0);
         const bool is = (after > 0);
         if (was == is) return;
@@ -206,11 +228,21 @@ namespace Gauges {
         e.presentMask = 0;
         e.presentList.clear();
         e.sumAll = 0;
+        e.sumMix = 0;
         e.posInList.assign(e.v.size(), 0xFFFF);
+
+        auto const& ER = ElementRegistry::get();
+
         for (std::size_t i = firstIndex(); i < e.v.size(); ++i) {
             const int v = e.v[i];
             if (v > 0) {
                 e.sumAll += v;
+
+                const ERF_ElementHandle h = handleFromIndex(i);
+                if (const ERF_ElementDesc* d = ER.get(h); !d || !d->noMixInMixedMode) {
+                    e.sumMix += v;
+                }
+
                 makePresent(e, i);
             }
         }
@@ -237,8 +269,8 @@ namespace {
         return s;
     }
 
-    static inline void ApplyElementLocksForReaction(Gauges::Entry& e, const std::vector<ERF_ElementHandle>& elems,
-                                                    float nowH, float seconds, bool isRealTime) {
+    inline void ApplyElementLocksForReaction(Gauges::Entry& e, const std::vector<ERF_ElementHandle>& elems, float nowH,
+                                             float seconds, bool isRealTime) {
         if (seconds <= 0.f) return;
 
         const double nowRt = NowRealSeconds();
@@ -256,8 +288,8 @@ namespace {
         }
     }
 
-    static inline void SetReactionCooldown(Gauges::Entry& e, ERF_ReactionHandle rh, float nowH, float cooldownSeconds,
-                                           bool cooldownIsRealTime) {
+    inline void SetReactionCooldown(Gauges::Entry& e, ERF_ReactionHandle rh, float nowH, float cooldownSeconds,
+                                    bool cooldownIsRealTime) {
         if (cooldownSeconds <= 0.f || rh == 0) return;
 
         const std::size_t ri = Gauges::idxReact(rh);
@@ -271,7 +303,7 @@ namespace {
         }
     }
 
-    static bool TriggerReaction(RE::Actor* a, Gauges::Entry& e, ERF_ElementHandle elem) {
+    bool TriggerReaction(RE::Actor* a, Gauges::Entry& e, ERF_ElementHandle elem) {
         if (!a) {
             return false;
         }
@@ -290,14 +322,44 @@ namespace {
         picks.reserve(static_cast<std::size_t>(maxCount));
 
         if (elem == 0) {
-            const int sum = e.sumAll;
-            if (sum <= 0 || e.presentList.empty()) {
+            const int sum = e.sumMix;
+            if (sum <= 0) {
+                return false;
+            }
+
+            auto const& ER = ElementRegistry::get();
+
+            std::vector<std::uint8_t> totals(e.v.size(), 0);
+            std::vector<ERF_ElementHandle> presentMix;
+            presentMix.reserve(e.presentList.size());
+
+            for (ERF_ElementHandle h : e.presentList) {
+                if (const ERF_ElementDesc* d = ER.get(h); d && d->noMixInMixedMode) {
+                    continue;
+                }
+
+                const std::size_t idx = Gauges::idx(h);
+                if (idx >= e.v.size()) {
+                    continue;
+                }
+
+                const std::uint8_t v = e.v[idx];
+                if (!v) {
+                    continue;
+                }
+
+                totals[idx] = v;
+                presentMix.push_back(h);
+            }
+
+            if (presentMix.empty()) {
                 return false;
             }
 
             const float invSum = 1.0f / static_cast<float>(sum);
 
-            RR.pickBestFastMulti(e.v, e.presentList, sum, invSum, maxCount, picks);
+            RR.pickBestFastMulti(totals, std::span<const ERF_ElementHandle>(presentMix.data(), presentMix.size()), sum,
+                                 invSum, maxCount, picks);
             if (picks.empty()) {
                 return false;
             }
@@ -320,14 +382,24 @@ namespace {
 
                 if (r->clearAllOnTrigger && !clearedAll) {
                     for (std::size_t i = Gauges::firstIndex(); i < e.v.size(); ++i) {
+                        const int before = e.v[i];
+                        if (!before) {
+                            continue;
+                        }
+
+                        const ERF_ElementHandle h = Gauges::handleFromIndex(i);
+
+                        if (const ERF_ElementDesc* d = ER.get(h); d && d->noMixInMixedMode) {
+                            continue;
+                        }
+
                         e.v[i] = 0;
                         e.lastHitH[i] = nowH;
                         e.lastEvalH[i] = nowH;
+
+                        onValChange(e, i, before, 0);
                     }
-                    e.presentMask = 0;
-                    e.presentList.clear();
-                    e.sumAll = 0;
-                    e.posInList.assign(e.v.size(), 0xFFFF);
+
                     clearedAll = true;
                 }
 
@@ -345,11 +417,11 @@ namespace {
 
                 if (r->cb) {
                     if (auto* tasks = SKSE::GetTaskInterface()) {
-                        RE::ActorHandle h = a->CreateRefHandle();
+                        RE::ActorHandle hActor = a->CreateRefHandle();
                         auto cb = r->cb;
                         void* user = r->user;
-                        tasks->AddTask([h, cb, user]() {
-                            if (auto actorNi = h.get()) {
+                        tasks->AddTask([hActor, cb, user]() {
+                            if (auto actorNi = hActor.get()) {
                                 if (auto* target = actorNi.get()) {
                                     ERF_ReactionContext ctx{};
                                     ctx.target = target;
@@ -453,8 +525,7 @@ namespace {
         return any;
     }
 
-    static bool MaybeTriggerPreEffectsFor(RE::Actor* a, Gauges::Entry& e, ERF_ElementHandle elem,
-                                          std::uint8_t gaugeNow) {
+    bool MaybeTriggerPreEffectsFor(RE::Actor* a, Gauges::Entry& e, ERF_ElementHandle elem, std::uint8_t gaugeNow) {
         if (!a || elem == 0) return false;
 
         const auto list = PreEffectRegistry::get().listByElement(elem);
@@ -589,25 +660,25 @@ namespace {
 }
 
 namespace {
-    static bool Save(SKSE::SerializationInterface* ser, bool dryRun) {
+    bool Save(SKSE::SerializationInterface* ser, bool dryRun) {
         const auto& m = Gauges::state();
         if (dryRun) {
             return !m.empty();
         }
 
-        const std::uint32_t count = static_cast<std::uint32_t>(m.size());
-        if (!ser->WriteRecordData(&count, sizeof(count))) return false;
+        if (const auto count = static_cast<std::uint32_t>(m.size()); !ser->WriteRecordData(&count, sizeof(count)))
+            return false;
 
         auto writeVecU8 = [&](const std::vector<std::uint8_t>& v) {
-            const std::uint32_t n = static_cast<std::uint32_t>(v.size());
+            const auto n = static_cast<std::uint32_t>(v.size());
             return ser->WriteRecordData(&n, sizeof(n)) && (n == 0 || ser->WriteRecordData(v.data(), n * sizeof(v[0])));
         };
         auto writeVecF = [&](const std::vector<float>& v) {
-            const std::uint32_t n = static_cast<std::uint32_t>(v.size());
+            const auto n = static_cast<std::uint32_t>(v.size());
             return ser->WriteRecordData(&n, sizeof(n)) && (n == 0 || ser->WriteRecordData(v.data(), n * sizeof(v[0])));
         };
         auto writeVecD = [&](const std::vector<double>& v) {
-            const std::uint32_t n = static_cast<std::uint32_t>(v.size());
+            const auto n = static_cast<std::uint32_t>(v.size());
             return ser->WriteRecordData(&n, sizeof(n)) && (n == 0 || ser->WriteRecordData(v.data(), n * sizeof(v[0])));
         };
 
@@ -641,19 +712,19 @@ namespace {
         std::uint32_t count{};
         if (!ser->ReadRecordData(&count, sizeof(count))) return false;
 
-        auto readVecU8 = [&](std::vector<std::uint8_t>& v) -> bool {
+        auto readVecU8 = [&](std::vector<std::uint8_t>& v) {
             std::uint32_t n{};
             if (!ser->ReadRecordData(&n, sizeof(n))) return false;
             v.resize(n);
             return n == 0 || ser->ReadRecordData(v.data(), n * sizeof(v[0]));
         };
-        auto readVecF = [&](std::vector<float>& v) -> bool {
+        auto readVecF = [&](std::vector<float>& v) {
             std::uint32_t n{};
             if (!ser->ReadRecordData(&n, sizeof(n))) return false;
             v.resize(n);
             return n == 0 || ser->ReadRecordData(v.data(), n * sizeof(v[0]));
         };
-        auto readVecD = [&](std::vector<double>& v) -> bool {
+        auto readVecD = [&](std::vector<double>& v) {
             std::uint32_t n{};
             if (!ser->ReadRecordData(&n, sizeof(n))) return false;
             v.resize(n);
@@ -676,7 +747,8 @@ namespace {
         };
 
         for (std::uint32_t i = 0; i < count; ++i) {
-            RE::FormID oldID{}, newID{};
+            RE::FormID oldID{};
+            RE::FormID newID{};
             if (!ser->ReadRecordData(&oldID, sizeof(oldID))) return false;
 
             if (!ser->ResolveFormID(oldID, newID)) {
@@ -776,7 +848,7 @@ void ElementalGauges::Add(RE::Actor* a, ERF_ElementHandle elem, int delta) {
     const int adj = (scaled <= 0.0) ? 0 : static_cast<int>(scaled);
     const int afterI = std::clamp(before + adj, 0, 100);
 
-    const int sumBefore = e.sumAll;
+    const int sumBeforeMix = e.sumMix;
     e.v[i] = static_cast<std::uint8_t>(afterI);
     e.lastHitH[i] = nowH;
     e.lastEvalH[i] = nowH;
@@ -786,12 +858,17 @@ void ElementalGauges::Add(RE::Actor* a, ERF_ElementHandle elem, int delta) {
         HUD::StartHUDTick();
     }
 
-    if (const bool singleMode = ERF::GetConfig().isSingle.load(std::memory_order_relaxed); singleMode) {
+    const auto& ER = ElementRegistry::get();
+    const ERF_ElementDesc* d = ER.get(elem);
+    const bool isIsolatedInMixed = d && d->noMixInMixedMode;
+
+    if (const bool singleMode = ERF::GetConfig().isSingle.load(std::memory_order_relaxed);
+        singleMode || isIsolatedInMixed) {
         if (before < 100 && afterI >= 100) {
             TriggerReaction(a, e, elem);
         }
     } else {
-        if (sumBefore < 100 && e.sumAll >= 100) {
+        if (sumBeforeMix < 100 && e.sumMix >= 100) {
             TriggerReaction(a, e, 0);
         }
     }
@@ -913,9 +990,11 @@ void ElementalGauges::ForEachDecayed(const std::function<void(RE::FormID, Totals
 
 std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(RE::FormID id, double nowRt,
                                                                                float nowH) {
-    auto& m = Gauges::state();
-    auto it = m.find(id);
-    if (it == m.end()) return std::nullopt;
+    auto& M = Gauges::state();
+    auto it = M.find(id);
+    if (it == M.end()) {
+        return std::nullopt;
+    }
 
     auto& e = it->second;
 
@@ -924,53 +1003,74 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
 
     HudGaugeBundle bundle{};
 
-    TL_vals32.clear();
-    TL_cols32.clear();
-    TL_accumIcons.clear();
-    TL_elemsNZ.clear();
-    TL_vals32.reserve(e.presentList.size());
-    TL_cols32.reserve(e.presentList.size());
-    TL_elemsNZ.reserve(e.presentList.size());
+    struct ElemInfo {
+        ERF_ElementHandle handle{};
+        std::uint8_t value{0};
+        std::uint32_t rgb{0xFFFFFF};
+        bool isolated{false};
+    };
 
     const auto colors = GetColorLUT();
-    const std::size_t beginE = Gauges::firstIndex();
+    const auto& ER = ElementRegistry::get();
+
+    std::vector<ElemInfo> elems;
+    elems.reserve(e.presentList.size());
 
     int newSum = 0;
+
     for (ERF_ElementHandle h : e.presentList) {
-        const std::size_t i = Gauges::idx(h);
-        if (i >= e.v.size()) continue;
-        const std::uint8_t vv = e.v[i];
-        if (vv == 0) continue;
+        const std::size_t idx = Gauges::idx(h);
+        if (idx >= e.v.size()) {
+            continue;
+        }
 
+        const std::uint8_t vv = e.v[idx];
+        if (vv == 0) {
+            continue;
+        }
+
+        ElemInfo info;
+        info.handle = h;
+        info.value = vv;
+        info.rgb = (idx < colors.size()) ? colors[idx] : 0xFFFFFFu;
+
+        if (const auto* d = ER.get(h)) {
+            info.isolated = d->noMixInMixedMode;
+        } else {
+            info.isolated = false;
+        }
+
+        elems.push_back(info);
         newSum += vv;
-        TL_vals32.push_back(static_cast<std::uint32_t>(std::min<int>(vv, 100)));
-        TL_elemsNZ.push_back(h);
-
-        const std::size_t colorIdx = i;
-        const std::uint32_t rgb = (colorIdx < colors.size()) ? colors[colorIdx] : 0xFFFFFFu;
-        TL_cols32.push_back(rgb);
     }
 
-    bundle.values = std::span<const std::uint32_t>(TL_vals32.data(), TL_vals32.size());
-    bundle.colors = std::span<const std::uint32_t>(TL_cols32.data(), TL_cols32.size());
-
     if (newSum == 0) {
-        const bool anyElemLock = std::any_of(e.blockUntilH.begin() + std::min(beginE, e.blockUntilH.size()),
-                                             e.blockUntilH.end(), [&](float x) { return x > nowH; }) ||
-                                 std::any_of(e.blockUntilRtS.begin() + std::min(beginE, e.blockUntilRtS.size()),
-                                             e.blockUntilRtS.end(), [&](double x) { return x > nowRt; });
+        const std::size_t beginE = Gauges::firstIndex();
+        const std::size_t nE = e.v.size();
+
+        bool anyElemLock = false;
+        for (std::size_t i2 = beginE; i2 < nE && !anyElemLock; ++i2) {
+            const bool lockH = (i2 < e.blockUntilH.size()) && (e.blockUntilH[i2] > nowH);
+            const bool lockRt = (i2 < e.blockUntilRtS.size()) && (e.blockUntilRtS[i2] > nowRt);
+            anyElemLock = lockH || lockRt;
+        }
 
         bool anyReactCd = false;
-        if (!e.reactCdH.empty()) {
-            for (std::size_t ri = Gauges::firstIndex(); ri < e.reactCdH.size(); ++ri) {
+        const std::size_t beginR = Gauges::firstIndex();
+
+        if (!anyReactCd && !e.reactCdH.empty()) {
+            const std::size_t nR = e.reactCdH.size();
+            for (std::size_t ri = beginR; ri < nR; ++ri) {
                 if (e.reactCdH[ri] > nowH) {
                     anyReactCd = true;
                     break;
                 }
             }
         }
+
         if (!anyReactCd && !e.reactCdRtS.empty()) {
-            for (std::size_t ri = Gauges::firstIndex(); ri < e.reactCdRtS.size(); ++ri) {
+            const std::size_t nR = e.reactCdRtS.size();
+            for (std::size_t ri = beginR; ri < nR; ++ri) {
                 if (e.reactCdRtS[ri] > nowRt) {
                     anyReactCd = true;
                     break;
@@ -980,7 +1080,8 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
 
         bool anyReactFlag = false;
         if (!e.inReaction.empty()) {
-            for (std::size_t ri = Gauges::firstIndex(); ri < e.inReaction.size(); ++ri) {
+            const std::size_t nR = e.inReaction.size();
+            for (std::size_t ri = beginR; ri < nR; ++ri) {
                 if (e.inReaction[ri] != 0) {
                     anyReactFlag = true;
                     break;
@@ -989,27 +1090,57 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
         }
 
         if (!anyElemLock && !anyReactCd && !anyReactFlag) {
-            m.erase(it);
+            M.erase(it);
         }
+
         bundle.icons = std::span<const char* const>();
+        bundle.values = std::span<const std::uint32_t>();
+        bundle.colors = std::span<const std::uint32_t>();
+
         return std::nullopt;
     }
 
-    auto const& RR = ReactionRegistry::get();
-    if (const bool singleMode = ERF::GetConfig().isSingle.load(std::memory_order_relaxed); singleMode) {
-        TL_accumIcons.reserve(TL_vals32.size());
-        thread_local std::vector<std::uint8_t> TL_totals;
+    TL_vals32.clear();
+    TL_cols32.clear();
+    TL_accumIcons.clear();
+    TL_elemsNZ.clear();
 
-        if (TL_totals.size() < e.v.size()) TL_totals.resize(e.v.size());
-        TL_totals.assign(e.v.size(), 0);
+    TL_vals32.reserve(elems.size());
+    TL_cols32.reserve(elems.size());
+    TL_elemsNZ.reserve(elems.size());
+
+    const auto& RR = ReactionRegistry::get();
+
+    if (const bool singleMode = ERF::GetConfig().isSingle.load(std::memory_order_relaxed); singleMode) {
+        for (const auto& info : elems) {
+            TL_vals32.push_back(static_cast<std::uint32_t>(std::min<int>(info.value, 100)));
+            TL_cols32.push_back(info.rgb);
+            TL_elemsNZ.push_back(info.handle);
+        }
+
+        bundle.values = std::span<const std::uint32_t>(TL_vals32.data(), TL_vals32.size());
+        bundle.colors = std::span<const std::uint32_t>(TL_cols32.data(), TL_cols32.size());
+
+        TL_accumIcons.clear();
+
+        thread_local std::vector<std::uint8_t> TL_totals;
+        if (TL_totals.size() < e.v.size()) {
+            TL_totals.resize(e.v.size());
+        }
+
         for (std::size_t k = 0; k < TL_vals32.size(); ++k) {
             const auto elemH = TL_elemsNZ[k];
             const auto idx = Gauges::idx(elemH);
+            if (idx >= TL_totals.size()) {
+                TL_accumIcons.push_back(nullptr);
+                continue;
+            }
 
-            std::fill(TL_totals.begin(), TL_totals.end(), 0);
-            TL_totals[idx] = static_cast<std::uint8_t>(std::min<std::uint32_t>(TL_vals32[k], 100));
+            std::ranges::fill(TL_totals, std::uint8_t{0});
+            const auto vClamped = static_cast<std::uint8_t>(std::min<std::uint32_t>(TL_vals32[k], 100));
+            TL_totals[idx] = vClamped;
 
-            const int sum = TL_totals[idx];
+            const int sum = vClamped;
             if (sum <= 0) {
                 TL_accumIcons.push_back(nullptr);
                 continue;
@@ -1017,18 +1148,192 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
 
             const float inv = 1.0f / static_cast<float>(sum);
             std::array<ERF_ElementHandle, 1> present{elemH};
-            auto best = RR.pickBestFast(TL_totals, {present.data(), present.size()}, sum, inv);
+            auto best = RR.pickBestFast(TL_totals, std::span<const ERF_ElementHandle>(present.data(), present.size()),
+                                        sum, inv);
+
             TL_accumIcons.push_back(best && best->icon ? best->icon : nullptr);
         }
-    } else {
-        const int sumAll = newSum;
-        const float invAll = 1.0f / static_cast<float>(sumAll);
-        auto best = RR.pickBestFast(e.v, e.presentList, sumAll, invAll);
-        TL_accumIcons.push_back(best && best->icon ? best->icon : nullptr);
+
+        bundle.icons = std::span<const char* const>(TL_accumIcons.data(), TL_accumIcons.size());
+        return bundle;
+    }
+
+    int firstMixIndex = -1;
+    for (std::size_t i3 = 0; i3 < elems.size(); ++i3) {
+        if (!elems[i3].isolated) {
+            firstMixIndex = static_cast<int>(i3);
+            break;
+        }
+    }
+
+    if (firstMixIndex < 0) {
+        for (const auto& info : elems) {
+            TL_vals32.push_back(static_cast<std::uint32_t>(std::min<int>(info.value, 100)));
+            TL_cols32.push_back(info.rgb);
+            TL_elemsNZ.push_back(info.handle);
+        }
+
+        bundle.values = std::span<const std::uint32_t>(TL_vals32.data(), TL_vals32.size());
+        bundle.colors = std::span<const std::uint32_t>(TL_cols32.data(), TL_cols32.size());
+
+        TL_accumIcons.clear();
+
+        thread_local std::vector<std::uint8_t> TL_totalsIso;
+        if (TL_totalsIso.size() < e.v.size()) {
+            TL_totalsIso.resize(e.v.size());
+        }
+
+        for (std::size_t k2 = 0; k2 < TL_vals32.size(); ++k2) {
+            const auto elemH = TL_elemsNZ[k2];
+            const auto idx = Gauges::idx(elemH);
+            if (idx >= TL_totalsIso.size()) {
+                TL_accumIcons.push_back(nullptr);
+                continue;
+            }
+
+            std::ranges::fill(TL_totalsIso, std::uint8_t{0});
+            const auto vClamped = static_cast<std::uint8_t>(std::min<std::uint32_t>(TL_vals32[k2], 100));
+            TL_totalsIso[idx] = vClamped;
+
+            const int sum = vClamped;
+            if (sum <= 0) {
+                TL_accumIcons.push_back(nullptr);
+                continue;
+            }
+
+            const float inv = 1.0f / static_cast<float>(sum);
+            std::array<ERF_ElementHandle, 1> present{elemH};
+            auto best = RR.pickBestFast(TL_totalsIso,
+                                        std::span<const ERF_ElementHandle>(present.data(), present.size()), sum, inv);
+
+            TL_accumIcons.push_back(best && best->icon ? best->icon : nullptr);
+        }
+
+        bundle.icons = std::span<const char* const>(TL_accumIcons.data(), TL_accumIcons.size());
+        return bundle;
+    }
+
+    std::vector<const ElemInfo*> singlesBefore;
+    std::vector<const ElemInfo*> mixList;
+    std::vector<const ElemInfo*> singlesAfter;
+
+    singlesBefore.reserve(elems.size());
+    mixList.reserve(elems.size());
+    singlesAfter.reserve(elems.size());
+
+    for (std::size_t i4 = 0; i4 < elems.size(); ++i4) {
+        const auto& info = elems[i4];
+        if (!info.isolated) {
+            mixList.push_back(&info);
+        } else if (static_cast<int>(i4) < firstMixIndex) {
+            singlesBefore.push_back(&info);
+        } else {
+            singlesAfter.push_back(&info);
+        }
+    }
+
+    auto pushInfo = [&](const ElemInfo* p) {
+        TL_vals32.push_back(static_cast<std::uint32_t>(std::min<int>(p->value, 100)));
+        TL_cols32.push_back(p->rgb);
+        TL_elemsNZ.push_back(p->handle);
+    };
+
+    for (auto* p : singlesBefore) {
+        pushInfo(p);
+    }
+    for (auto* p : mixList) {
+        pushInfo(p);
+    }
+    for (auto* p : singlesAfter) {
+        pushInfo(p);
+    }
+
+    bundle.values = std::span<const std::uint32_t>(TL_vals32.data(), TL_vals32.size());
+    bundle.colors = std::span<const std::uint32_t>(TL_cols32.data(), TL_cols32.size());
+
+    TL_accumIcons.clear();
+
+    const std::size_t nb = singlesBefore.size();
+    const std::size_t nm = mixList.size();
+    const std::size_t na = singlesAfter.size();
+
+    const std::size_t gaugeCount = nb + (nm > 0 ? 1u : 0u) + na;
+    TL_accumIcons.resize(gaugeCount, nullptr);
+
+    bundle.singlesBefore = static_cast<std::uint32_t>(nb);
+    bundle.singlesAfter = static_cast<std::uint32_t>(na);
+
+    thread_local std::vector<std::uint8_t> TL_totalsSingle;
+    if (TL_totalsSingle.size() < e.v.size()) {
+        TL_totalsSingle.resize(e.v.size());
+    }
+
+    auto pickIconSingle = [&](const ElemInfo* info) -> const char* {
+        const auto elemH = info->handle;
+        const auto idx = Gauges::idx(elemH);
+        if (idx >= TL_totalsSingle.size()) {
+            return nullptr;
+        }
+
+        std::ranges::fill(TL_totalsSingle, std::uint8_t{0});
+        const auto vClamped = static_cast<std::uint8_t>(std::min<int>(info->value, 100));
+        TL_totalsSingle[idx] = vClamped;
+
+        const int sum = vClamped;
+        if (sum <= 0) {
+            return nullptr;
+        }
+
+        const float inv = 1.0f / static_cast<float>(sum);
+        std::array<ERF_ElementHandle, 1> present{elemH};
+        auto best = RR.pickBestFast(TL_totalsSingle, std::span<const ERF_ElementHandle>(present.data(), present.size()),
+                                    sum, inv);
+
+        return (best && best->icon) ? best->icon : nullptr;
+    };
+
+    for (std::size_t i5 = 0; i5 < nb; ++i5) {
+        TL_accumIcons[i5] = pickIconSingle(singlesBefore[i5]);
+    }
+
+    if (nm > 0) {
+        thread_local std::vector<std::uint8_t> TL_totalsMix;
+        if (TL_totalsMix.size() < e.v.size()) {
+            TL_totalsMix.resize(e.v.size());
+        }
+        std::ranges::fill(TL_totalsMix, std::uint8_t{0});
+
+        int sumMixIcons = 0;
+        std::vector<ERF_ElementHandle> presentMix;
+        presentMix.reserve(nm);
+
+        for (const auto* p : mixList) {
+            const auto elemH = p->handle;
+            const auto idx = Gauges::idx(elemH);
+            if (idx >= TL_totalsMix.size()) {
+                continue;
+            }
+            const auto vClamped = static_cast<std::uint8_t>(std::min<int>(p->value, 100));
+            TL_totalsMix[idx] = vClamped;
+            sumMixIcons += vClamped;
+            presentMix.push_back(elemH);
+        }
+
+        if (sumMixIcons > 0 && !presentMix.empty()) {
+            const float inv = 1.0f / static_cast<float>(sumMixIcons);
+            auto best = RR.pickBestFast(std::span<const std::uint8_t>(TL_totalsMix.data(), TL_totalsMix.size()),
+                                        std::span<const ERF_ElementHandle>(presentMix.data(), presentMix.size()),
+                                        sumMixIcons, inv);
+            TL_accumIcons[nb] = (best && best->icon) ? best->icon : nullptr;
+        }
+    }
+
+    const std::size_t offsetAfter = nb + (nm > 0 ? 1u : 0u);
+    for (std::size_t i6 = 0; i6 < na; ++i6) {
+        TL_accumIcons[offsetAfter + i6] = pickIconSingle(singlesAfter[i6]);
     }
 
     bundle.icons = std::span<const char* const>(TL_accumIcons.data(), TL_accumIcons.size());
-
     return bundle;
 }
 

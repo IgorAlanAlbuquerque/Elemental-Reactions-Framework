@@ -102,15 +102,15 @@ static void RegisterEverything_Core() {
     ERF_ElementHandle fire{}, frost{}, shock{};
 
     {
-        ERF_ElementDesc_Public d{"Fire", 0xF04A3A, kMagicDamageFire};
+        ERF_ElementDesc_Public d{"Fire", 0xF04A3A, kMagicDamageFire, true};
         fire = api->RegisterElement(d);
     }
     {
-        ERF_ElementDesc_Public d{"Frost", 0x4FB2FF, kMagicDamageFrost};
+        ERF_ElementDesc_Public d{"Frost", 0x4FB2FF, kMagicDamageFrost, false};
         frost = api->RegisterElement(d);
     }
     {
-        ERF_ElementDesc_Public d{"Shock", 0xFFD02A, kMagicDamageShock};
+        ERF_ElementDesc_Public d{"Shock", 0xFFD02A, kMagicDamageShock, false};
         shock = api->RegisterElement(d);
     }
 

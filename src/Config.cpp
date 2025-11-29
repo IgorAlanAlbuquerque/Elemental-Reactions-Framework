@@ -7,7 +7,7 @@
 #include <string>
 
 namespace {
-    static bool loadBool(CSimpleIniA& ini, const char* sec, const char* key, bool defVal) {
+    bool loadBool(CSimpleIniA& ini, const char* sec, const char* key, bool defVal) {
         const char* val = ini.GetValue(sec, key, nullptr);
         if (!val) return defVal;
         std::string s = val;
@@ -17,7 +17,7 @@ namespace {
         return defVal;
     }
 
-    static double loadDouble(CSimpleIniA& ini, const char* sec, const char* key, double defVal) {
+    double loadDouble(CSimpleIniA& ini, const char* sec, const char* key, double defVal) {
         const char* v = ini.GetValue(sec, key, nullptr);
         if (!v) return defVal;
         char* end = nullptr;
@@ -116,7 +116,7 @@ namespace ERF {
     }
 
     Config& GetConfig() {
-        static Config g_cfg{};
+        static Config g_cfg{};  // NOSONAR - estado local static
         return g_cfg;
     }
 }

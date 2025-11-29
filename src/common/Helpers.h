@@ -53,33 +53,24 @@ inline RE::Actor* AsActor(RE::MagicTarget* mt) noexcept {
 [[nodiscard]] constexpr std::uint64_t MakeWidgetID(std::uint32_t formID) { return (std::uint64_t(formID) << 32); }
 
 namespace ERF {
-
     using _PO3_GetFormEditorID = const char* (*)(std::uint32_t);
-
     inline std::string GetEditorID_po3(const RE::TESForm* form) {
         if (!form) {
             return {};
         }
-
-        // mesmo padrão que o exemplo da página do Tweaks
-        // https://www.nexusmods.com/skyrimspecialedition/mods/51073
         static HMODULE tweaks = ::GetModuleHandleW(L"po3_Tweaks");
         if (!tweaks) {
             return {};
         }
-
-        static auto func = reinterpret_cast<_PO3_GetFormEditorID>(::GetProcAddress(tweaks, "GetFormEditorID"));
-
+        static auto func = reinterpret_cast<_PO3_GetFormEditorID>(  // NOSONAR - interop with GetProcAddress
+            ::GetProcAddress(tweaks, "GetFormEditorID"));
         if (!func) {
             return {};
         }
-
         const char* ed = func(form->formID);
         if (ed && *ed) {
             return std::string(ed);
         }
-
         return {};
     }
-
 }

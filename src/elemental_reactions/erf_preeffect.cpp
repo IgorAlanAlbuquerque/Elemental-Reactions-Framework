@@ -8,8 +8,9 @@ PreEffectRegistry& PreEffectRegistry::get() {
     return R;
 }
 
-// NOSONAR - this method intentionally mutates the registry state
-ERF_PreEffectHandle PreEffectRegistry::registerPreEffect(const ERF_PreEffectDesc& d) {
+ERF_PreEffectHandle
+PreEffectRegistry::registerPreEffect(  // NOSONAR - this method intentionally mutates the registry state
+    const ERF_PreEffectDesc& d) {
     auto& R = get();
     if (R._frozen) {
         return 0;

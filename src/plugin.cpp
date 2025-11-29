@@ -72,7 +72,7 @@ namespace {
                             InjectHUD::g_trueHUD->RegisterNewWidgetType(InjectHUD::g_pluginHandle,
                                                                         InjectHUD::ERF_WIDGET_TYPE);
 
-                            ElementalGaugesHook::ALLOW_HUD_TICK.store(true, std::memory_order_release);
+                            ElementalGaugesHook::AllowHudTickFlag().store(true, std::memory_order_release);
                         } else {
                             spdlog::error("[ERF] Falha ao carregar o SWF dos widgets!");
                         }
@@ -80,7 +80,7 @@ namespace {
 
                 ERF::GetConfig().Load();
                 ERF_UI::Register();
-                ERF::Overrides::SetGaugeEffect(ElementalGaugesHook::g_mgefGaugeAcc);
+                ERF::Overrides::SetGaugeEffect(ElementalGaugesHook::GaugeAccEffect());
                 ERF::Overrides::ApplyOverridesFromJSON();
                 break;
             }
@@ -124,14 +124,14 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* sks
 
 const std::filesystem::path& ERF_GetThisDllDir() {
     static std::filesystem::path cached;
-    static bool init = false;
-    if (!init) {
+
+    if (static bool init = false; !init) {
         init = true;
 
         HMODULE self = nullptr;
         if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                               reinterpret_cast<LPCWSTR>(&SKSEPlugin_Load), &self)) {
-            wchar_t buf[MAX_PATH]{};
+                               reinterpret_cast<LPCWSTR>(&SKSEPlugin_Load), &self)) {  // NOSONAR
+            wchar_t buf[MAX_PATH]{};                                                   // NOSONAR
             const DWORD n = GetModuleFileNameW(self, buf, static_cast<DWORD>(std::size(buf)));
             if (n > 0) {
                 cached = std::filesystem::path(buf).parent_path();

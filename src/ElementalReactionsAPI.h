@@ -37,6 +37,7 @@ struct ERF_ElementDesc_Public {
     const char* name;
     std::uint32_t colorRGB;   // 0xRRGGBB
     std::uint32_t keywordID;  // FormID (0 se não usar)
+    bool noMixInMixedMode;
 };
 
 // 2) Reação (disparo em 100%)
