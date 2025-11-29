@@ -52,25 +52,27 @@ namespace {
                 ElementalGaugesHook::Install();
                 ElementalGaugesHook::RegisterAEEventSink();
 
-                const auto trueHUD = static_cast<TRUEHUD_API::IVTrueHUD4*>(
+                auto& st = InjectHUD::Globals();
+                st.trueHUD = static_cast<TRUEHUD_API::IVTrueHUD4*>(
                     TRUEHUD_API::RequestPluginAPI(TRUEHUD_API::InterfaceVersion::V4));
-                if (!trueHUD) {
+                if (!st.trueHUD) {
                     spdlog::warn("[ERF] TrueHUD não detectado. Widget não será carregado.");
                     return;
                 }
-                InjectHUD::g_trueHUD = trueHUD;
-                InjectHUD::g_pluginHandle = SKSE::GetPluginHandle();
+
+                st.pluginHandle = SKSE::GetPluginHandle();
 
                 if (auto* ui = RE::UI::GetSingleton()) {
                     ui->GetEventSource<RE::MenuOpenCloseEvent>()->AddEventSink(
                         TrueHUDWatcher::TrueHUDMenuWatcher::GetSingleton());
                 }
 
-                InjectHUD::g_trueHUD->LoadCustomWidgets(
-                    InjectHUD::g_pluginHandle, InjectHUD::ERF_SWF_PATH, [](TRUEHUD_API::APIResult result) {
+                st.trueHUD->LoadCustomWidgets(
+                    st.pluginHandle, InjectHUD::ERF_SWF_PATH, [](TRUEHUD_API::APIResult result) {
+                        auto& st = InjectHUD::Globals();
+
                         if (result == TRUEHUD_API::APIResult::OK) {
-                            InjectHUD::g_trueHUD->RegisterNewWidgetType(InjectHUD::g_pluginHandle,
-                                                                        InjectHUD::ERF_WIDGET_TYPE);
+                            st.trueHUD->RegisterNewWidgetType(st.pluginHandle, InjectHUD::ERF_WIDGET_TYPE);
 
                             ElementalGaugesHook::AllowHudTickFlag().store(true, std::memory_order_release);
                         } else {
