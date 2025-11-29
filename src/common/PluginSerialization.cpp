@@ -7,39 +7,46 @@
 
 namespace SerFunctions {
     using Handlers = std::vector<Ser::Handler>;
+    using IndexMap = std::unordered_map<std::uint32_t, const Ser::Handler*>;
 
     Handlers& registry() noexcept {
         static Handlers r;  // NOSONAR: estado centralizado, mutável por design
         return r;
     }
-
-    static std::unordered_map<std::uint32_t, const Ser::Handler*> g_index;
-    static bool g_indexBuilt = false;
-    static void BuildIndexOnce_() {
-        if (g_indexBuilt) return;
-        g_index.clear();
-        g_index.reserve(registry().size());
-        for (const auto& h : registry()) g_index.emplace(h.recordID, &h);
-        g_indexBuilt = true;
+    static IndexMap& index() noexcept {
+        static IndexMap idx;  // NOSONAR: estado centralizado
+        return idx;
     }
 
-    static void InvalidateIndex_() { g_indexBuilt = false; }
+    static bool& indexBuilt() noexcept {
+        static bool built = false;  // NOSONAR: estado centralizado
+        return built;
+    }
+
+    static void BuildIndexOnce_() {
+        auto& idx = index();
+        auto& built = indexBuilt();
+
+        if (built) return;
+
+        idx.clear();
+        idx.reserve(registry().size());
+        for (const auto& h : registry()) {
+            idx.emplace(h.recordID, &h);
+        }
+        built = true;
+    }
+
+    static void InvalidateIndex_() { indexBuilt() = false; }
 
     void OnSave(SKSE::SerializationInterface* ser) {
         BuildIndexOnce_();
         for (const auto& h : registry()) {
             if (!h.save) continue;
-            const bool hasData = h.save(ser, true);
-            if (!hasData) continue;
+            if (const bool hasData = h.save(ser, true); !hasData) continue;
             if (ser->OpenRecord(h.recordID, h.version)) {
                 (void)h.save(ser, false);
             }
-        }
-    }
-
-    void OnRevert(SKSE::SerializationInterface*) {
-        for (const auto& h : registry()) {
-            if (h.revert) h.revert();
         }
     }
 
@@ -49,9 +56,16 @@ namespace SerFunctions {
         std::uint32_t length{};
         while (ser->GetNextRecordInfo(type, version, length)) {
             BuildIndexOnce_();
-            if (auto it = g_index.find(type); it != g_index.end() && it->second && it->second->load) {
+            auto& idx = index();
+            if (auto it = idx.find(type); it != idx.end() && it->second && it->second->load) {
                 it->second->load(ser, version, length);
             }
+        }
+    }
+
+    void OnRevert(SKSE::SerializationInterface*) {
+        for (const auto& h : registry()) {
+            if (h.revert) h.revert();
         }
     }
 }

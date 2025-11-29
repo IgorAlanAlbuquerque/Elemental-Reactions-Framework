@@ -449,6 +449,8 @@ void InjectHUD::ERFWidget::ClearAndHide(bool isSingle, bool isHorizontal, float 
     _isSingle.SetBoolean(isSingle);
     _isHorin.SetBoolean(isHorizontal);
     _spacing.SetNumber(spacingPx);
+    _singlesBefore.SetNumber(0.0);
+    _singlesAfter.SetNumber(0.0);
 
     _args[0] = _arrComboRemain;
     _args[1] = _arrComboTints;
@@ -458,9 +460,11 @@ void InjectHUD::ERFWidget::ClearAndHide(bool isSingle, bool isHorizontal, float 
     _args[5] = _isSingle;
     _args[6] = _isHorin;
     _args[7] = _spacing;
+    _args[8] = _singlesBefore;
+    _args[9] = _singlesAfter;
 
     RE::GFxValue ret;
-    _object.Invoke("setAll", &ret, _args, 8);
+    _object.Invoke("setAll", &ret, _args, 10);
 
     if (_lastVisible) {
         RE::GFxValue vis;
@@ -478,7 +482,7 @@ void InjectHUD::ERFWidget::SetAll(const std::vector<double>& comboRemain01,
                                   const std::vector<double>& accumValues,
                                   const std::vector<std::uint32_t>& accumColorsRGB,
                                   const std::vector<const char*>& iconNames, bool isSingle, bool isHorizontal,
-                                  float spacingPx) {
+                                  float spacingPx, std::uint32_t singlesBefore, std::uint32_t singlesAfter) {
     if (!_view) return;
 
     EnsureArrays();
@@ -492,6 +496,8 @@ void InjectHUD::ERFWidget::SetAll(const std::vector<double>& comboRemain01,
     _isSingle.SetBoolean(isSingle);
     _isHorin.SetBoolean(isHorizontal);
     _spacing.SetNumber(spacingPx);
+    _singlesBefore.SetNumber(static_cast<double>(singlesBefore));
+    _singlesAfter.SetNumber(static_cast<double>(singlesAfter));
 
     _args[0] = _arrComboRemain;
     _args[1] = _arrComboTints;
@@ -501,6 +507,8 @@ void InjectHUD::ERFWidget::SetAll(const std::vector<double>& comboRemain01,
     _args[5] = _isSingle;
     _args[6] = _isHorin;
     _args[7] = _spacing;
+    _args[8] = _singlesBefore;
+    _args[9] = _singlesAfter;
 
     const bool flagsChanged = (_lastIsSingle != isSingle) || (_lastIsHor != isHorizontal) ||
                               !(std::isfinite(_lastSpacing) && std::abs(_lastSpacing - spacingPx) < 1e-6);
@@ -511,7 +519,7 @@ void InjectHUD::ERFWidget::SetAll(const std::vector<double>& comboRemain01,
     bool ok = true;
 
     if (needInvoke) {
-        ok = _object.Invoke("setAll", &ret, _args, 8);
+        ok = _object.Invoke("setAll", &ret, _args, 10);
         _lastIsSingle = isSingle;
         _lastIsHor = isHorizontal;
         _lastSpacing = spacingPx;
@@ -618,7 +626,14 @@ void InjectHUD::UpdateFor(RE::Actor* actor, double nowRt, float nowH) {
     const bool isSingle = g_snap.isSingle;
     const bool isHor = w._isPlayerWidget ? g_snap.playerHorizontal : g_snap.npcHorizontal;
     const float space = w._isPlayerWidget ? g_snap.playerSpacing : g_snap.npcSpacing;
-    w.SetAll(comboRemain01, comboTintsRGB, accumValues, accumColorsRGB, IconNames, isSingle, isHor, space);
+    std::uint32_t singlesBefore = 0;
+    std::uint32_t singlesAfter = 0;
+    if (haveTotals) {
+        singlesBefore = bundleOpt->singlesBefore;
+        singlesAfter = bundleOpt->singlesAfter;
+    }
+    w.SetAll(comboRemain01, comboTintsRGB, accumValues, accumColorsRGB, IconNames, isSingle, isHor, space,
+             singlesBefore, singlesAfter);
 }
 
 void InjectHUD::BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float seconds, bool realTime) {

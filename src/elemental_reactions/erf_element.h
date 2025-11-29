@@ -16,6 +16,7 @@ struct ERF_ElementDesc {
     std::uint32_t colorRGB;
     RE::BGSKeyword* keyword;
     std::vector<double> stateMultDense;
+    bool noMixInMixedMode{false};
     void setMultiplierForState(ERF_StateHandle sh, double mult) {
         if (sh == 0) return;
         const std::size_t need = static_cast<std::size_t>(sh) + 1;

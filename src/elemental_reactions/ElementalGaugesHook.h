@@ -6,8 +6,8 @@
 #include "REL/Relocation.h"
 
 namespace ElementalGaugesHook {
-    extern std::atomic_bool ALLOW_HUD_TICK;
-    extern RE::EffectSetting* g_mgefGaugeAcc;
+    std::atomic_bool& AllowHudTickFlag() noexcept;
+    RE::EffectSetting*& GaugeAccEffect() noexcept;
     void StartHUDTick();
     void StopHUDTick();
     void Install();

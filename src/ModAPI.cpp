@@ -39,6 +39,7 @@ static ERF_ElementHandle API_RegisterElement(const ERF_ElementDesc_Public& d) no
     in.name = d.name;
     in.colorRGB = d.colorRGB;
     in.keyword = d.keywordID ? RE::TESForm::LookupByID<RE::BGSKeyword>(d.keywordID) : nullptr;
+    in.noMixInMixedMode = d.noMixInMixedMode ? d.noMixInMixedMode : false;
     return ElementRegistry::get().registerElement(in);
 }
 
