@@ -254,8 +254,8 @@ namespace {
     thread_local std::vector<std::uint32_t> TL_cols32;
     thread_local std::vector<const char*> TL_accumIcons;
     thread_local std::vector<ERF_ElementHandle> TL_elemsNZ;
-
     static std::vector<std::uint32_t> g_colorLUT;
+    constexpr const char* kFallbackReactionIcon = "ERF_ICON__erf_core__fallback";
 
     inline double NowRealSeconds() {
         using clock = std::chrono::steady_clock;
@@ -361,7 +361,31 @@ namespace {
             RR.pickBestFastMulti(totals, std::span<const ERF_ElementHandle>(presentMix.data(), presentMix.size()), sum,
                                  invSum, maxCount, picks);
             if (picks.empty()) {
-                return false;
+                const float nowH = NowHours();
+                auto const& ER2 = ElementRegistry::get();
+                bool clearedAny = false;
+
+                for (std::size_t i = Gauges::firstIndex(); i < e.v.size(); ++i) {
+                    const int before = e.v[i];
+                    if (!before) {
+                        continue;
+                    }
+
+                    const ERF_ElementHandle h2 = Gauges::handleFromIndex(i);
+
+                    if (const ERF_ElementDesc* d2 = ER2.get(h2); d2 && d2->noMixInMixedMode) {
+                        continue;
+                    }
+
+                    e.v[i] = 0;
+                    e.lastHitH[i] = nowH;
+                    e.lastEvalH[i] = nowH;
+
+                    onValChange(e, i, before, 0);
+                    clearedAny = true;
+                }
+
+                return clearedAny;
             }
 
             const float nowH = NowHours();
@@ -460,12 +484,17 @@ namespace {
 
         RR.pickBestFastMulti(totals, std::span<const ERF_ElementHandle>(present.data(), present.size()), sum, invSum,
                              maxCount, picks);
-        if (picks.empty()) {
-            return false;
-        }
-
         const float nowH = NowHours();
         const int beforeVal = v;
+
+        if (picks.empty()) {
+            e.v[idx] = 0;
+            e.lastHitH[idx] = nowH;
+            e.lastEvalH[idx] = nowH;
+            Gauges::onValChange(e, idx, beforeVal, 0);
+            return true;
+        }
+
         bool clearedElem = false;
         bool any = false;
 
@@ -1151,7 +1180,8 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
             auto best = RR.pickBestFast(TL_totals, std::span<const ERF_ElementHandle>(present.data(), present.size()),
                                         sum, inv);
 
-            TL_accumIcons.push_back(best && best->icon ? best->icon : nullptr);
+            const char* icon = (best && best->icon) ? best->icon : kFallbackReactionIcon;
+            TL_accumIcons.push_back(icon);
         }
 
         bundle.icons = std::span<const char* const>(TL_accumIcons.data(), TL_accumIcons.size());
@@ -1206,7 +1236,9 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
             auto best = RR.pickBestFast(TL_totalsIso,
                                         std::span<const ERF_ElementHandle>(present.data(), present.size()), sum, inv);
 
-            TL_accumIcons.push_back(best && best->icon ? best->icon : nullptr);
+            const char* icon = (best && best->icon) ? best->icon : kFallbackReactionIcon;
+
+            TL_accumIcons.push_back(icon);
         }
 
         bundle.icons = std::span<const char* const>(TL_accumIcons.data(), TL_accumIcons.size());
@@ -1289,7 +1321,10 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
         auto best = RR.pickBestFast(TL_totalsSingle, std::span<const ERF_ElementHandle>(present.data(), present.size()),
                                     sum, inv);
 
-        return (best && best->icon) ? best->icon : nullptr;
+        if (best && best->icon) {
+            return best->icon;
+        }
+        return kFallbackReactionIcon;
     };
 
     for (std::size_t i5 = 0; i5 < nb; ++i5) {
@@ -1324,7 +1359,7 @@ std::optional<ElementalGauges::HudGaugeBundle> ElementalGauges::PickHudDecayed(R
             auto best = RR.pickBestFast(std::span<const std::uint8_t>(TL_totalsMix.data(), TL_totalsMix.size()),
                                         std::span<const ERF_ElementHandle>(presentMix.data(), presentMix.size()),
                                         sumMixIcons, inv);
-            TL_accumIcons[nb] = (best && best->icon) ? best->icon : nullptr;
+            TL_accumIcons[nb] = (best && best->icon) ? best->icon : kFallbackReactionIcon;
         }
     }
 

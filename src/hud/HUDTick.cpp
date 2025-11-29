@@ -59,13 +59,14 @@ namespace {
             alive.insert(id);
 
             RE::Actor* a = nullptr;
-            if (auto itW = InjectHUD::widgets.find(id); itW != InjectHUD::widgets.end()) {
+            auto& st = InjectHUD::Globals();
+            if (auto itW = st.widgets.find(id); itW != st.widgets.end()) {
                 a = (itW->second.handle) ? itW->second.handle.get().get() : nullptr;
             }
             if (!a) {
                 a = RE::TESForm::LookupByID<RE::Actor>(id);
                 if (a) {
-                    auto [__itW, __insertedW] = InjectHUD::widgets.try_emplace(id);
+                    auto [__itW, __insertedW] = st.widgets.try_emplace(id);
                     auto& entry = __itW->second;
                     entry.handle = a->CreateRefHandle();
                 }
@@ -99,7 +100,8 @@ namespace {
             lastSeen[id] = now;
         });
 
-        for (auto it = InjectHUD::widgets.begin(); it != InjectHUD::widgets.end(); ++it) {
+        auto& st = InjectHUD::Globals();
+        for (auto it = st.widgets.begin(); it != st.widgets.end(); ++it) {
             const RE::FormID id = it->first;
             const bool isAlive = (alive.find(id) != alive.end());
 
@@ -127,7 +129,7 @@ namespace {
 
         for (auto it = lastSeen.begin(); it != lastSeen.end();) {
             const RE::FormID id = it->first;
-            const bool hasEntry = (InjectHUD::widgets.find(id) != InjectHUD::widgets.end());
+            const bool hasEntry = (st.widgets.find(id) != st.widgets.end());
             const bool aliveNow = (alive.find(id) != alive.end());
             const float age = now - it->second;
 
@@ -139,7 +141,7 @@ namespace {
             }
         }
 
-        const bool hadWork = !alive.empty() || !InjectHUD::widgets.empty();
+        const bool hadWork = !alive.empty() || !st.widgets.empty();
         g_lastHadWork.store(hadWork, std::memory_order_relaxed);
     }
 }

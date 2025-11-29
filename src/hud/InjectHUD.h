@@ -67,12 +67,23 @@ namespace InjectHUD {
     constexpr auto ERF_SYMBOL_NAME = "ERF_Gauge";
     constexpr uint32_t ERF_WIDGET_TYPE = FOURCC('E', 'L', 'R', 'E');
 
-    extern std::unordered_map<RE::FormID, HUDEntry> widgets;
-    extern std::unordered_map<RE::FormID, std::vector<ActiveReactionHUD>> combos;
-    extern std::deque<PendingReaction> g_comboQueue;
-    extern std::mutex g_comboMx;
-    extern TRUEHUD_API::IVTrueHUD4* g_trueHUD;
-    extern SKSE::PluginHandle g_pluginHandle;
+    struct GlobalState {
+        std::unordered_map<RE::FormID, HUDEntry> widgets;
+        std::unordered_map<RE::FormID, std::vector<ActiveReactionHUD>> combos;
+        std::deque<PendingReaction> comboQueue;
+        std::mutex comboMx;
+        TRUEHUD_API::IVTrueHUD4* trueHUD{nullptr};
+        SKSE::PluginHandle pluginHandle{static_cast<SKSE::PluginHandle>(-1)};
+    };
+
+    GlobalState& Globals() noexcept;
+
+    inline auto& Widgets() noexcept { return Globals().widgets; }
+    inline auto& Combos() noexcept { return Globals().combos; }
+    inline auto& ComboQueue() noexcept { return Globals().comboQueue; }
+    inline auto& ComboMutex() noexcept { return Globals().comboMx; }
+    inline auto*& TrueHUD() noexcept { return Globals().trueHUD; }
+    inline auto& PluginHandle() noexcept { return Globals().pluginHandle; }
 
     class ERFWidget : public TRUEHUD_API::WidgetBase {
     public:
@@ -93,8 +104,12 @@ namespace InjectHUD {
         float _lastScale{std::numeric_limits<float>::quiet_NaN()};
 
         void Initialize() override;
-        void Update(float) override {}
-        void Dispose() override {}
+        void Update(float) override {
+            // nothing here
+        }
+        void Dispose() override {
+            // nothing here
+        }
 
         void FollowActorHead(RE::Actor* actor);
 

@@ -14,13 +14,9 @@
 #include "Offsets.h"
 #include "Utils.h"
 
-namespace InjectHUD {
-    TRUEHUD_API::IVTrueHUD4* g_trueHUD = nullptr;
-    SKSE::PluginHandle g_pluginHandle = static_cast<SKSE::PluginHandle>(-1);
-    std::unordered_map<RE::FormID, HUDEntry> widgets{};
-    std::unordered_map<RE::FormID, std::vector<ActiveReactionHUD>> combos;
-    std::deque<PendingReaction> g_comboQueue;
-    std::mutex g_comboMx;
+InjectHUD::GlobalState& InjectHUD::Globals() noexcept {
+    static GlobalState s;
+    return s;
 }
 
 namespace {
@@ -51,10 +47,11 @@ namespace {
 
     void DrainComboQueueOnUI(double nowRt, float nowH) {
         std::deque<PendingReaction> take;
-        {
-            std::scoped_lock lk(g_comboMx);
-            take.swap(g_comboQueue);
-        }
+        auto& st = InjectHUD::Globals();
+
+        std::scoped_lock lk(st.comboMx);
+        take.swap(st.comboQueue);
+
         if (take.empty()) return;
 
         auto const& RR = ReactionRegistry::get();
@@ -82,7 +79,7 @@ namespace {
                 hud.icon = nullptr;
             }
 
-            auto [__itC, __insertedC] = combos.try_emplace(pr.id);
+            auto [__itC, __insertedC] = st.combos.try_emplace(pr.id);
             auto& vec = __itC->second;
             std::erase_if(vec, [nowRt, nowH](const ActiveReactionHUD& c) {
                 return c.realTime ? (nowRt >= c.endRtS) : (nowH >= c.endH);
@@ -94,8 +91,9 @@ namespace {
     void GetActiveReactions(RE::FormID id, double nowRt, float nowH, std::vector<ActiveReactionHUD>& out) {
         out.clear();
 
-        const auto it = combos.find(id);
-        if (it == combos.end()) return;
+        auto& st = InjectHUD::Globals();
+        const auto it = st.combos.find(id);
+        if (it == st.combos.end()) return;
 
         auto& vec = it->second;
 
@@ -534,12 +532,13 @@ void InjectHUD::ERFWidget::SetAll(const std::vector<double>& comboRemain01,
 }
 
 void InjectHUD::AddFor(RE::Actor* actor) {
-    if (!g_trueHUD || !actor) {
+    auto& st = InjectHUD::Globals();
+    if (!st.trueHUD || !actor) {
         return;
     }
 
     const auto id = actor->GetFormID();
-    auto [__itW, __insertedW] = widgets.try_emplace(id);
+    auto [__itW, __insertedW] = st.widgets.try_emplace(id);
     auto& entry = __itW->second;
     entry.handle = actor->CreateRefHandle();
 
@@ -552,17 +551,18 @@ void InjectHUD::AddFor(RE::Actor* actor) {
     auto w = std::make_shared<ERFWidget>();
     w->_isPlayerWidget = actor->IsPlayerRef();
     const auto wid = actor->GetFormID();
-    g_trueHUD->AddWidget(g_pluginHandle, ERF_WIDGET_TYPE, wid, ERF_SYMBOL_NAME, w);
+    st.trueHUD->AddWidget(st.pluginHandle, ERF_WIDGET_TYPE, wid, ERF_SYMBOL_NAME, w);
     w->ProcessDelegates();
     entry.widget = std::move(w);
 }
 
 void InjectHUD::UpdateFor(RE::Actor* actor, double nowRt, float nowH) {
-    if (!g_trueHUD || !actor) return;
+    auto& st = InjectHUD::Globals();
+    if (!st.trueHUD || !actor) return;
 
     const auto id = actor->GetFormID();
-    auto it = widgets.find(id);
-    if (it == widgets.end() || !it->second.widget) return;
+    auto it = st.widgets.find(id);
+    if (it == st.widgets.end() || !it->second.widget) return;
 
     auto& w = *it->second.widget;
 
@@ -639,6 +639,7 @@ void InjectHUD::UpdateFor(RE::Actor* actor, double nowRt, float nowH) {
 void InjectHUD::BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float seconds, bool realTime) {
     if (!a || seconds <= 0.f) return;
 
+    auto& st = InjectHUD::Globals();
     const auto id = a->GetFormID();
 
     PendingReaction pr{};
@@ -648,8 +649,8 @@ void InjectHUD::BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float sec
     pr.secs = seconds;
     pr.realTime = realTime;
 
-    std::scoped_lock lk(g_comboMx);
-    g_comboQueue.push_back(std::move(pr));
+    std::scoped_lock lk(st.comboMx);
+    st.comboQueue.push_back(std::move(pr));
 
     if (ERF::GetConfig().hudEnabled.load(std::memory_order_relaxed)) {
         HUD::StartHUDTick();
@@ -657,8 +658,9 @@ void InjectHUD::BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float sec
 }
 
 bool InjectHUD::HideFor(RE::FormID id) {
-    auto it = widgets.find(id);
-    if (it == widgets.end() || !it->second.widget) return false;
+    auto& st = InjectHUD::Globals();
+    auto it = st.widgets.find(id);
+    if (it == st.widgets.end() || !it->second.widget) return false;
 
     auto& w = *it->second.widget;
     if (!w._view) return false;
@@ -671,32 +673,34 @@ bool InjectHUD::HideFor(RE::FormID id) {
 }
 
 bool InjectHUD::RemoveFor(RE::FormID id) {
-    if (!g_trueHUD || !id) return false;
-    auto it = widgets.find(id);
-    if (it == widgets.end()) return false;
+    auto& st = InjectHUD::Globals();
+    if (!st.trueHUD || !id) return false;
+    auto it = st.widgets.find(id);
+    if (it == st.widgets.end()) return false;
 
     if (it->second.widget) {
-        g_trueHUD->RemoveWidget(g_pluginHandle, ERF_WIDGET_TYPE, id, TRUEHUD_API::WidgetRemovalMode::Immediate);
+        st.trueHUD->RemoveWidget(st.pluginHandle, ERF_WIDGET_TYPE, id, TRUEHUD_API::WidgetRemovalMode::Immediate);
         it->second.widget.reset();
     }
-    widgets.erase(it);
-    combos.erase(id);
+    st.widgets.erase(it);
+    st.combos.erase(id);
     return true;
 }
 
 void InjectHUD::RemoveAllWidgets() {
-    if (!g_trueHUD) {
-        widgets.clear();
-        combos.clear();
+    auto& st = InjectHUD::Globals();
+    if (!st.trueHUD) {
+        st.widgets.clear();
+        st.combos.clear();
         return;
     }
 
-    for (const auto& [id, entry] : widgets) {
+    for (const auto& [id, entry] : st.widgets) {
         if (!entry.widget) continue;
-        g_trueHUD->RemoveWidget(g_pluginHandle, ERF_WIDGET_TYPE, id, TRUEHUD_API::WidgetRemovalMode::Immediate);
+        st.trueHUD->RemoveWidget(st.pluginHandle, ERF_WIDGET_TYPE, id, TRUEHUD_API::WidgetRemovalMode::Immediate);
     }
-    widgets.clear();
-    combos.clear();
+    st.widgets.clear();
+    st.combos.clear();
 }
 
 void InjectHUD::OnTrueHUDClose() {
