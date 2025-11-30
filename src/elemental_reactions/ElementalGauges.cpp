@@ -269,38 +269,27 @@ namespace {
         return s;
     }
 
-    inline void ApplyElementLocksForReaction(Gauges::Entry& e, const std::vector<ERF_ElementHandle>& elems, float nowH,
-                                             float seconds, bool isRealTime) {
+    inline void ApplyElementLocksForReaction(Gauges::Entry& e, const std::vector<ERF_ElementHandle>& elems,
+                                             float seconds) {
         if (seconds <= 0.f) return;
 
         const double nowRt = NowRealSeconds();
         const double untilRt = nowRt + seconds;
-        const float untilH = nowH + static_cast<float>(seconds / 3600.0);
 
         for (ERF_ElementHandle h : elems) {
             const std::size_t idx = Gauges::idx(h);
             if (idx >= e.v.size()) continue;
-            if (isRealTime) {
-                e.blockUntilRtS[idx] = std::max(e.blockUntilRtS[idx], untilRt);
-            } else {
-                e.blockUntilH[idx] = std::max(e.blockUntilH[idx], untilH);
-            }
+            e.blockUntilRtS[idx] = std::max(e.blockUntilRtS[idx], untilRt);
         }
     }
 
-    inline void SetReactionCooldown(Gauges::Entry& e, ERF_ReactionHandle rh, float nowH, float cooldownSeconds,
-                                    bool cooldownIsRealTime) {
+    inline void SetReactionCooldown(Gauges::Entry& e, ERF_ReactionHandle rh, float cooldownSeconds) {
         if (cooldownSeconds <= 0.f || rh == 0) return;
 
         const std::size_t ri = Gauges::idxReact(rh);
 
-        if (cooldownIsRealTime) {
-            const double untilRt = NowRealSeconds() + static_cast<double>(cooldownSeconds);
-            if (ri < e.reactCdRtS.size()) e.reactCdRtS[ri] = std::max(e.reactCdRtS[ri], untilRt);
-        } else {
-            const float untilH = nowH + (cooldownSeconds / 3600.0f);
-            if (ri < e.reactCdH.size()) e.reactCdH[ri] = std::max(e.reactCdH[ri], untilH);
-        }
+        const double untilRt = NowRealSeconds() + static_cast<double>(cooldownSeconds);
+        if (ri < e.reactCdRtS.size()) e.reactCdRtS[ri] = std::max(e.reactCdRtS[ri], untilRt);
     }
 
     bool TriggerReaction(RE::Actor* a, Gauges::Entry& e, ERF_ElementHandle elem) {
@@ -404,7 +393,7 @@ namespace {
                     continue;
                 }
 
-                if (r->clearAllOnTrigger && !clearedAll) {
+                if (!clearedAll) {
                     for (std::size_t i = Gauges::firstIndex(); i < e.v.size(); ++i) {
                         const int before = e.v[i];
                         if (!before) {
@@ -427,17 +416,14 @@ namespace {
                     clearedAll = true;
                 }
 
-                ApplyElementLocksForReaction(e, r->elements, nowH, r->elementLockoutSeconds,
-                                             r->elementLockoutIsRealTime);
+                ApplyElementLocksForReaction(e, r->elements, r->elementLockoutSeconds);
 
-                SetReactionCooldown(e, rh, nowH, r->cooldownSeconds, r->cooldownIsRealTime);
+                SetReactionCooldown(e, rh, r->cooldownSeconds);
 
                 const float durS =
                     (r->elementLockoutSeconds > 0.f) ? r->elementLockoutSeconds : std::max(0.5f, r->cooldownSeconds);
-                const bool durRT =
-                    (r->elementLockoutSeconds > 0.f) ? r->elementLockoutIsRealTime : r->cooldownIsRealTime;
 
-                InjectHUD::BeginReaction(a, rh, durS, durRT);
+                InjectHUD::BeginReaction(a, rh, durS);
 
                 if (r->cb) {
                     if (auto* tasks = SKSE::GetTaskInterface()) {
@@ -509,7 +495,7 @@ namespace {
                 continue;
             }
 
-            if (r->clearAllOnTrigger && !clearedElem) {
+            if (!clearedElem) {
                 e.v[idx] = 0;
                 e.lastHitH[idx] = nowH;
                 e.lastEvalH[idx] = nowH;
@@ -517,15 +503,14 @@ namespace {
                 clearedElem = true;
             }
 
-            ApplyElementLocksForReaction(e, r->elements, nowH, r->elementLockoutSeconds, r->elementLockoutIsRealTime);
+            ApplyElementLocksForReaction(e, r->elements, r->elementLockoutSeconds);
 
-            SetReactionCooldown(e, rh, nowH, r->cooldownSeconds, r->cooldownIsRealTime);
+            SetReactionCooldown(e, rh, r->cooldownSeconds);
 
             const float durS =
                 (r->elementLockoutSeconds > 0.f) ? r->elementLockoutSeconds : std::max(0.5f, r->cooldownSeconds);
-            const bool durRT = (r->elementLockoutSeconds > 0.f) ? r->elementLockoutIsRealTime : r->cooldownIsRealTime;
 
-            InjectHUD::BeginReaction(a, rh, durS, durRT);
+            InjectHUD::BeginReaction(a, rh, durS);
 
             if (r->cb) {
                 if (auto* tasks = SKSE::GetTaskInterface()) {

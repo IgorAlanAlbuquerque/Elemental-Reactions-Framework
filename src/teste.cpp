@@ -159,10 +159,7 @@ static void RegisterEverything_Core() {
         rF.minPctEach = 0.85f;
         rF.minSumSelected = 0.0f;
         rF.cooldownSeconds = 0.5f;
-        rF.cooldownIsRealTime = true;
         rF.elementLockoutSeconds = 10.0f;
-        rF.elementLockoutIsRealTime = true;
-        rF.clearAllOnTrigger = true;
         rF.hudTint = 0xF04A3A;
         rF.cb = &OnReactionFire;
         rF.user = nullptr;
@@ -178,10 +175,7 @@ static void RegisterEverything_Core() {
         rFs.minPctEach = 0.9f;
         rFs.minSumSelected = 0.0f;
         rFs.cooldownSeconds = 0.5f;
-        rFs.cooldownIsRealTime = true;
         rFs.elementLockoutSeconds = 10.0f;
-        rFs.elementLockoutIsRealTime = true;
-        rFs.clearAllOnTrigger = true;
         rFs.hudTint = 0xF04A3A;
         rFs.cb = &OnReactionFireS;
         rFs.user = nullptr;
@@ -197,10 +191,7 @@ static void RegisterEverything_Core() {
         rFt.minPctEach = 0.80f;
         rFt.minSumSelected = 0.0f;
         rFt.cooldownSeconds = 0.5f;
-        rFt.cooldownIsRealTime = true;
         rFt.elementLockoutSeconds = 10.0f;
-        rFt.elementLockoutIsRealTime = true;
-        rFt.clearAllOnTrigger = true;
         rFt.hudTint = 0xF04A3A;
         rFt.cb = &OnReactionFireT;
         rFt.user = nullptr;
@@ -217,10 +208,7 @@ static void RegisterEverything_Core() {
         rFr.minPctEach = 0.85f;
         rFr.minSumSelected = 0.0f;
         rFr.cooldownSeconds = 0.5f;
-        rFr.cooldownIsRealTime = true;
         rFr.elementLockoutSeconds = 10.0f;
-        rFr.elementLockoutIsRealTime = true;
-        rFr.clearAllOnTrigger = true;
         rFr.hudTint = 0x4FB2FF;
         rFr.cb = &OnReactionFrost;
         rFr.user = nullptr;
@@ -237,10 +225,7 @@ static void RegisterEverything_Core() {
         rS.minPctEach = 0.85f;
         rS.minSumSelected = 0.0f;
         rS.cooldownSeconds = 0.5f;
-        rS.cooldownIsRealTime = true;
         rS.elementLockoutSeconds = 10.0f;
-        rS.elementLockoutIsRealTime = true;
-        rS.clearAllOnTrigger = true;
         rS.hudTint = 0xFFD02A;
         rS.cb = &OnReactionShock;
         rS.user = nullptr;
