@@ -19,7 +19,6 @@ namespace InjectHUD {
         RE::ActorHandle handle{};
         ERF_ReactionHandle reaction{};
         float secs{0.f};
-        bool realTime{true};
     };
 
     struct ActiveReactionHUD {
@@ -155,7 +154,7 @@ namespace InjectHUD {
 
     void AddFor(RE::Actor* actor);
     void UpdateFor(RE::Actor* actor, double nowRtS, float nowH);
-    void BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float seconds, bool realTime);
+    void BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float seconds);
 
     bool HideFor(RE::FormID id);
     bool RemoveFor(RE::FormID id);

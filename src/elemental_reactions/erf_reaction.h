@@ -26,10 +26,6 @@ struct ERF_ReactionDesc {
     float elementLockoutSeconds = 0.0f;
 
     bool ordered = false;
-    bool cooldownIsRealTime = true;
-    bool elementLockoutIsRealTime = true;
-    bool clearAllOnTrigger = true;
-
     std::uint32_t Tint = 0xFFFFFF;
     std::string iconName;
 
@@ -84,4 +80,5 @@ private:
 
     bool checkEachElementPct(ERF_ReactionHandle h, const ERF_ReactionDesc& r, std::span<const std::uint8_t> totals,
                              float invSumAll, int& outSumSel) const;
+    bool checkOrdered(const ERF_ReactionDesc& r, std::span<const std::uint8_t> totals) const;
 };

@@ -63,13 +63,9 @@ namespace {
 
             ActiveReactionHUD hud{};
             hud.reaction = pr.reaction;
-            hud.realTime = pr.realTime;
             hud.durationS = pr.secs;
 
-            if (pr.realTime)
-                hud.endRtS = nowRt + pr.secs;
-            else
-                hud.endH = nowH + (pr.secs / 3600.0f);
+            hud.endRtS = nowRt + pr.secs;
 
             if (const auto* rd = RR.get(pr.reaction)) {
                 hud.tint = rd->Tint;
@@ -636,7 +632,7 @@ void InjectHUD::UpdateFor(RE::Actor* actor, double nowRt, float nowH) {
              singlesBefore, singlesAfter);
 }
 
-void InjectHUD::BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float seconds, bool realTime) {
+void InjectHUD::BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float seconds) {
     if (!a || seconds <= 0.f) return;
 
     auto& st = InjectHUD::Globals();
@@ -647,7 +643,6 @@ void InjectHUD::BeginReaction(RE::Actor* a, ERF_ReactionHandle handle, float sec
     pr.handle = a->CreateRefHandle();
     pr.reaction = handle;
     pr.secs = seconds;
-    pr.realTime = realTime;
 
     std::scoped_lock lk(st.comboMx);
     st.comboQueue.push_back(std::move(pr));

@@ -55,11 +55,7 @@ static ERF_ReactionHandle API_RegisterReaction(const ERF_ReactionDesc_Public& d)
     in.minPctEach = d.minPctEach;
     in.minSumSelected = d.minSumSelected;
     in.cooldownSeconds = d.cooldownSeconds;
-    in.cooldownIsRealTime = d.cooldownIsRealTime;
     in.elementLockoutSeconds = d.elementLockoutSeconds;
-    in.elementLockoutIsRealTime = d.elementLockoutIsRealTime;
-    in.clearAllOnTrigger = d.clearAllOnTrigger;
-
     in.Tint = d.hudTint ? d.hudTint : 0xFFFFFF;
     in.iconName = (d.iconName && d.iconName[0] != '\0') ? d.iconName : "";
 

@@ -44,6 +44,26 @@ ReactionRegistry& ReactionRegistry::get() {
     return R;
 }
 
+bool ReactionRegistry::checkOrdered(const ERF_ReactionDesc& r, std::span<const std::uint8_t> totals) const {
+    if (!r.ordered || r.elements.empty()) {
+        return true;
+    }
+
+    const ERF_ElementHandle hFirst = r.elements[0];
+    const int vFirst = valueForHandle(totals, hFirst);
+
+    for (std::size_t i = 1; i < r.elements.size(); ++i) {
+        const ERF_ElementHandle h = r.elements[i];
+        const int v = valueForHandle(totals, h);
+
+        if (v > vFirst) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 ERF_ReactionHandle
 ReactionRegistry::registerReaction(  // NOSONAR - this method intentionally mutates the reaction registry state
     const ERF_ReactionDesc& d) {
@@ -169,6 +189,10 @@ void ReactionRegistry::evalBucketForPickBest(Mask m, std::span<const std::uint8_
 
         float fracSel = 0.0f;
         if (!checkMinSumSel(h, sumSel, invSumAll, fracSel)) {
+            continue;
+        }
+
+        if (!checkOrdered(r, totals)) {
             continue;
         }
 
